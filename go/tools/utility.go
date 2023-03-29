@@ -1,4 +1,4 @@
-package tools
+package utility
 
 import (
 	"encoding/json"
@@ -7,11 +7,12 @@ import (
 	"io"
 	"log"
 	"math"
+	"math/rand"
 	"os"
 	"time"
 )
 
-func ReadJson(jsonFileName string) s.CephDumpOutputStruct {
+func ReadPgDumpJson(jsonFileName string) s.PgDumpOutputStruct {
 	jsonFile, err := os.Open(jsonFileName)
 
 	if err != nil {
@@ -23,11 +24,49 @@ func ReadJson(jsonFileName string) s.CephDumpOutputStruct {
 	// read our opened jsonFile as a byte array.
 	byteValue, _ := io.ReadAll(jsonFile)
 
-	var pgStruc s.CephDumpOutputStruct
+	var pgStruc s.PgDumpOutputStruct
 
 	json.Unmarshal(byteValue, &pgStruc)
 
 	return pgStruc
+}
+
+func ReadOsdTreeJson(jsonFileName string) s.OsdTreeOutputStruct {
+	jsonFile, err := os.Open(jsonFileName)
+
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	defer jsonFile.Close()
+
+	// read our opened jsonFile as a byte array.
+	byteValue, _ := io.ReadAll(jsonFile)
+
+	var osdStruc s.OsdTreeOutputStruct
+
+	json.Unmarshal(byteValue, &osdStruc)
+
+	return osdStruc
+}
+
+func ReadOsdDumpJson(jsonFileName string) s.OsdDumpOutputStruct {
+	jsonFile, err := os.Open(jsonFileName)
+
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	defer jsonFile.Close()
+
+	// read our opened jsonFile as a byte array.
+	byteValue, _ := io.ReadAll(jsonFile)
+
+	var osdStruc s.OsdDumpOutputStruct
+
+	json.Unmarshal(byteValue, &osdStruc)
+
+	return osdStruc
 }
 
 func RemoveDuplicateStr(strSlice []string) []string {
@@ -101,4 +140,18 @@ func SliceIntTestEquality(a, b []int) bool {
 		}
 	}
 	return true
+}
+
+func GetFloatRandomNumber(min int, max int) (randomNumber float64) {
+	rand.Seed(time.Now().UTC().UnixNano())
+
+	randomNumber = RoundFloat(float64(rand.Intn(max-min+1)+min), 2)
+	return
+}
+
+func GetIntRandomNumber(min int, max int) (randomNumber int) {
+	rand.Seed(time.Now().UTC().UnixNano())
+
+	randomNumber = rand.Intn(max-min+1) + min
+	return
 }
