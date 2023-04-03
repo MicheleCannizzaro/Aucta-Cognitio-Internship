@@ -14,9 +14,9 @@ func main() {
 	log.SetOutput(io.Discard) //disable log
 
 	//UnMarshalling Json
-	//pgDumpOutput := utility.ReadPgDumpJson("pg_dump.json")
-	//osdTreeOutput := utility.ReadOsdTreeJson("osd-tree.json")
-	//osdDumpOutput := utility.ReadOsdDumpJson("osd_dump.json")
+	pgDumpOutput := utility.ReadPgDumpJson("pg_dump.json")
+	osdTreeOutput := utility.ReadOsdTreeJson("osd-tree.json")
+	osdDumpOutput := utility.ReadOsdDumpJson("osd_dump.json")
 
 	// fmt.Println("------------------------------------------")
 	// fmt.Printf("  PG-DUMP JSON Information Gathering\n\n")
@@ -194,53 +194,66 @@ func main() {
 	// fmt.Printf("pool=%d, poolName=%s, size=%d, min_size=%d", poolStruct.Pool, poolStruct.PoolName, poolStruct.Size, poolStruct.MinSize)
 	// fmt.Printf("\n---------------------------------------------------------------\n")
 
-	// //-----------------------Incremental Risk Calculator-------------------------------------------
+	//-----------------------Incremental Risk Calculator-------------------------------------------
 	// fmt.Printf("-> If we switch off these Buckets how the risk of the pgs will change?\n\n")
 	// fmt.Printf("		RISK CALCULATOR		\n\n")
 	// host := "sv81"
-	// pgNumberOfAffectedReplicaMap1 := parser.RiskCalculator(host, pgDumpOutput, osdTreeOutput)
+	// pgNumberOfAffectedReplicaMap1 := parser.RiskCalculator(host, pgDumpOutput, osdTreeOutput, osdDumpOutput)
 	// fmt.Printf("(%s) NumberOfAffectedReplicaMap: %v\n\n", host, pgNumberOfAffectedReplicaMap1)
 
-	// fmt.Printf("---------------------------------------------------------------\n")
-	// fmt.Printf("		INCREMENTAL RISK CALCULATOR		\n\n")
+	//osd->public adress mapping
+	fmt.Printf("\n---------------------------------------------------------------\n")
+	fmt.Println(" -> Public Address - osds Map")
 
-	// //hosts := []string{"default"}  //buckets
-	// hosts := []string{"sv81", "sv82", "sv61", "newnamefor-sv53"}
-	// //hosts := []string{"newnamefor-sv53"}
-	// fmt.Printf("hosts -> %s\n\n", hosts)
-	// incrementalPgAffectedReplicaMap := parser.IncrementalRiskCalculator(hosts, pgDumpOutput, osdTreeOutput)
-	// fmt.Printf("%v\n\n", incrementalPgAffectedReplicaMap)
+	publicAddressOsdsMap := parser.GetPublicAddressOsdsMap(osdDumpOutput)
+	fmt.Printf("\n%s\n", publicAddressOsdsMap)
 
-	// fmt.Printf("[audit] len of incremental map %v\n\n", len(incrementalPgAffectedReplicaMap))
-	// fmt.Printf("\n---------------------------------------------------------------\n")
+	fmt.Printf("---------------------------------------------------------------\n")
+	fmt.Printf("		INCREMENTAL RISK CALCULATOR		\n\n")
 
-	// inHealthPgs1, goodPgs1, warningPgs1, lostPgs1 := parser.GetPgsWithHighProbabilityOfLosingData(incrementalPgAffectedReplicaMap, pgDumpOutput, osdDumpOutput)
-	// fmt.Printf("inHealthPgs (replicaLost=0%%):\n\n%s\n\n", inHealthPgs1)
-	// fmt.Printf("goodPgs (0<replicaLost<50%%):\n\n%s\n\n", goodPgs1)
-	// fmt.Printf("warningPgs (replicaLost>=50%% and replicaLost<100%%):\n\n%s\n\n", warningPgs1)
-	// fmt.Printf("lostPgs  (replicaLost=100%%):\n\n%s\n", lostPgs1)
-	// fmt.Printf("\n---------------------------------------------------------------\n")
+	//faults := []string{"default"}  //buckets
+	//faults := []string{"sv81", "sv82", "sv61", "newnamefor-sv53"}
+	//faults := []string{"10.22.22.15", "10.22.22.3", "10.22.22.4"}
+	faults := []string{"sv81", "10.22.22.3"}
+
+	fmt.Printf("fault Bucket or Network Device -> %s\n\n", faults)
+	incrementalPgAffectedReplicaMap := parser.IncrementalRiskCalculator(faults, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+	fmt.Printf("%v\n\n", incrementalPgAffectedReplicaMap)
+
+	//fmt.Printf("[audit] len of incremental map %v\n\n", len(incrementalPgAffectedReplicaMap))
+	fmt.Printf("\n---------------------------------------------------------------\n")
+
+	inHealthPgs1, goodPgs1, warningPgs1, lostPgs1 := parser.GetPgsWithHighProbabilityOfLosingData(incrementalPgAffectedReplicaMap, pgDumpOutput, osdDumpOutput)
+	fmt.Printf("inHealthPgs (replicaLost=0%%):\n\n%s\n\n", inHealthPgs1)
+	fmt.Printf("goodPgs (0<replicaLost<50%%):\n\n%s\n\n", goodPgs1)
+	fmt.Printf("warningPgs (replicaLost>=50%% and replicaLost<100%%):\n\n%s\n\n", warningPgs1)
+	fmt.Printf("lostPgs  (replicaLost=100%%):\n\n%s\n", lostPgs1)
+	fmt.Printf("\n---------------------------------------------------------------\n")
 
 	//-------------------------------------------------------------------------------------------
-
 	osdInitiationDate := time.Date(2020, time.Month(3), 21, 1, 10, 30, 0, time.UTC)
 	currentOsdLifeTime := utility.GetFloatRandomNumber(30, 90)
+	fmt.Printf("		RISK FAILURE FORECASTING     \n\n")
+	fmt.Printf(" -> Given an Osd installed on date: %s with current lifetime equal -> %.2f%%\n\n", osdInitiationDate, currentOsdLifeTime)
 
-	if faultTimePrediction, meanDegradationRate, err := parser.GetOsdFaultTimePrediction(osdInitiationDate, currentOsdLifeTime); err == nil {
-		fmt.Printf("the osd with this degradation rate:%f will reach the end of its optimal performance on date %v\n", meanDegradationRate, faultTimePrediction.Format("02-01-2006"))
+	if faultTimePrediction, meanDegradationRate, err := parser.GetOsdFaultTimeForecasting(osdInitiationDate, currentOsdLifeTime); err == nil {
+		fmt.Printf("with a degradation rate of %f it will reach the end of its optimal performance on date %v\n", meanDegradationRate, faultTimePrediction.Format("02-01-2006"))
 	}
 
+	fmt.Printf("\n---------------------------------------------------------------\n")
+	fmt.Printf("\nGiven a slice of osds and a date in the future, this function evaluate their lifetime to that date,\nand point out the ones with lifetime over 80%%\n")
 	//osdMap mock creation
 	osdMap := make(map[string]map[string]interface{})
 	for i := 1; i <= 8; i++ {
 		osdMap["osd."+strconv.Itoa(i)] = map[string]interface{}{"initiationDate": time.Date(utility.GetIntRandomNumber(2018, 2023), time.Month(utility.GetIntRandomNumber(1, 12)), utility.GetIntRandomNumber(1, 30), utility.GetIntRandomNumber(0, 24), utility.GetIntRandomNumber(0, 59), 0, 0, time.UTC), "currentOsdLifeTime": utility.GetFloatRandomNumber(30, 80)}
 	}
 
-	forecastingTime := time.Date(2023, time.Month(4), 7, 1, 10, 30, 0, time.UTC)
-
+	forecastingTime := time.Date(2023, time.Month(8), 7, 1, 10, 30, 0, time.UTC)
+	fmt.Printf("\nCurrent OsdLifetimeMap:\n%v\n", osdMap)
+	fmt.Printf("\nDate in the future:%s\n", forecastingTime)
 	osdLifeForecastingMap, warningOsdSlice := parser.RiskFailureForecasting(osdMap, forecastingTime)
-	fmt.Printf("\n%v\n", osdLifeForecastingMap)
-	fmt.Printf("These osds are nearing the end of their optimal life (over 80%%) %s\n", warningOsdSlice)
+	fmt.Printf("\nFuture OsdLifetimeMap: %v\n", osdLifeForecastingMap)
+	fmt.Printf("These osds are nearing the end of their optimal life (over 80%%) %s\n\n", warningOsdSlice)
 
 	//Next step -> getting currentOsdLifeTime from disk lifetime
 }

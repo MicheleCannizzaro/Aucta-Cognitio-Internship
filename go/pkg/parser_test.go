@@ -29,7 +29,7 @@ func TestIncrementalRiskCalculator(t *testing.T) {
 
 	hosts := []string{"sv81", "sv82", "sv61", "newnamefor-sv53"}
 	t.Logf("hosts -> %s\n\n", hosts)
-	incrementalPgAffectedReplicaMap := IncrementalRiskCalculator(hosts, pgDumpOutput, osdTreeOutput)
+	incrementalPgAffectedReplicaMap := IncrementalRiskCalculator(hosts, pgDumpOutput, osdTreeOutput, osdDumpOutput)
 	inHealthPgs, goodPgs, warningPgs, lostPgs := GetPgsWithHighProbabilityOfLosingData(incrementalPgAffectedReplicaMap, pgDumpOutput, osdDumpOutput)
 	//t.Logf("%v\n\n", incrementalPgAffectedReplicaMap)
 

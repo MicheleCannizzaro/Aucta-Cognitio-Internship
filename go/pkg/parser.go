@@ -6,6 +6,7 @@ import (
 	s "go/structs"
 	utility "go/tools"
 	"log"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -832,26 +833,53 @@ func GetPgTotalReplicas(givenPg string, osdDumpOutput s.OsdDumpOutputStruct) flo
 	return float64(numberOfPgReplica)
 }
 
+// important
+func GetPublicAddressOsdsMap(osdDumpOutput s.OsdDumpOutputStruct) map[string][]string {
+	osds := osdDumpOutput.Osds
+	publicAddressOsdsMap := make(map[string][]string)
+
+	for _, osd := range osds {
+		publicAddress := strings.Split(osd.PublicAddr, ":")[0]
+
+		if _, isPresent := publicAddressOsdsMap[publicAddress]; !isPresent {
+			publicAddressOsdsMap[publicAddress] = []string{}
+		}
+
+		publicAddressOsdsMap[publicAddress] = append(publicAddressOsdsMap[publicAddress], "osd."+strconv.Itoa(osd.Osd))
+	}
+
+	return publicAddressOsdsMap
+}
+
 // -----------------------OSD PG POOL (HOST) MAPPING FUNCTIONS--------------------------
-func RiskCalculator(faultBucketName string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct) map[string]int {
+func RiskCalculator(faultBucketOrRouter string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) map[string]int {
+	addressRegex, _ := regexp.Compile("([0-9]{2}.){3}[0-9]{1,2}")
+	var affectedOsds []string
 
-	faultBucket := GetNode(faultBucketName, osdTreeOutput)
+	if addressRegex.MatchString(faultBucketOrRouter) {   //if name is router (address)
+		publicAddressOsdsMap := GetPublicAddressOsdsMap(osdDumpOutput)
+		affectedOsds = publicAddressOsdsMap[faultBucketOrRouter]
 
-	bucketDistributionMap := GetDistributionMap(faultBucket.Type, pgDumpOutput, osdTreeOutput)
-	affectedOsds := bucketDistributionMap[faultBucketName].Osd.([]string)
+	} else {												//if name is bucket
+		faultBucket := GetNode(faultBucketOrRouter, osdTreeOutput)
+
+		bucketDistributionMap := GetDistributionMap(faultBucket.Type, pgDumpOutput, osdTreeOutput)
+		affectedOsds = bucketDistributionMap[faultBucketOrRouter].Osd.([]string)
+	}
 
 	affectedOsdIds := GetOsdIdFromOsdNames(affectedOsds)
 
 	pgNumberOfAffectedReplicaMap := GetPgNumberOfAffectedReplicaMap(affectedOsdIds, pgDumpOutput)
+
 	return pgNumberOfAffectedReplicaMap
 }
 
 // important
-func IncrementalRiskCalculator(faultBucketNames []string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct) map[string]int {
+func IncrementalRiskCalculator(faultBucketNames []string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) map[string]int {
 	totalNumberOfAffectedReplicaMap := make(map[string]int)
 
 	for _, faultBucketName := range faultBucketNames {
-		NumberOfAffectedReplicaMap := RiskCalculator(faultBucketName, pgDumpOutput, osdTreeOutput)
+		NumberOfAffectedReplicaMap := RiskCalculator(faultBucketName, pgDumpOutput, osdTreeOutput, osdDumpOutput)
 
 		for pg, numReplicas := range NumberOfAffectedReplicaMap {
 			if _, isPresent := totalNumberOfAffectedReplicaMap[pg]; !isPresent {
@@ -874,7 +902,7 @@ func GetOsdMeanDegradationRatePerWeek(currentTime time.Time, osdInitiationDate t
 	return
 }
 
-func GetOsdFaultTimePrediction(osdInitiationDate time.Time, currentOsdLifeTime float64) (time.Time, float64, error) {
+func GetOsdFaultTimeForecasting(osdInitiationDate time.Time, currentOsdLifeTime float64) (time.Time, float64, error) {
 	currentTime := time.Now().UTC()
 	meanDegradationRatePerWeek := GetOsdMeanDegradationRatePerWeek(currentTime, osdInitiationDate, currentOsdLifeTime)
 	faultPredictionWeeks := (100 - currentOsdLifeTime) / meanDegradationRatePerWeek
