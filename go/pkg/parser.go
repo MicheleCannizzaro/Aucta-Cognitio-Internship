@@ -3,13 +3,15 @@ package pkg
 import (
 	"errors"
 	"fmt"
-	s "go/structs"
-	utility "go/tools"
 	"log"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go/structs"
+	s "github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go/structs"
+	utility "github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go/tools"
 )
 
 // ----------------------------STRUCTS----------------------------
@@ -395,6 +397,7 @@ func GetTotalAffectedPgsAndPools(faultOsdSlice []int, pgDumpOutput s.PgDumpOutpu
 	return totalAffectedPgs, totalAffectedPools
 }
 
+// important
 func GetPgNumberOfAffectedReplicaMap(faultOsdSlice []int, pgDumpOutput s.PgDumpOutputStruct) map[string]int {
 	//defer utility.Duration(utility.Track("getPgNumberOfAffectedReplicaMap"))
 
@@ -412,6 +415,7 @@ func GetPgNumberOfAffectedReplicaMap(faultOsdSlice []int, pgDumpOutput s.PgDumpO
 	return pgNumberOfAffectedReplicaMap
 }
 
+// important
 func GetPgsWithHighProbabilityOfLosingData(pgNumberOfAffectedReplicaMap map[string]int, pgDumpOutput s.PgDumpOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) (inHealthPgs []string, goodPgs []string, warningPgs []string, lostPgs []string) {
 	//defer utility.Duration(utility.Track("getPgsWithHighProbabilityOfLosingData"))
 
@@ -439,6 +443,78 @@ func GetPgsWithHighProbabilityOfLosingData(pgNumberOfAffectedReplicaMap map[stri
 	inHealthPgs = utility.Difference(utility.RemoveDuplicateStr(GetAllPgInAllOsds(pgDumpOutput)), allCompromisedPgs)
 
 	return inHealthPgs, goodPgs, warningPgs, lostPgs
+}
+
+// important
+func GetPgsWithZeroOrOneRemainingReplica(faultBucketOrRouter []string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) ([]string, []string) {
+	pgsOneReplicaSlice := []string{}
+	pgsZeroReplicaSlice := []string{}
+
+	incrementalPgAffectedReplicaMap := IncrementalRiskCalculator(faultBucketOrRouter, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+
+	for pg, numPgAffectedReplicas := range incrementalPgAffectedReplicaMap {
+		numPgTotalReplicas := int(GetPgTotalReplicas(pg, osdDumpOutput))
+
+		numPgRemainingReplicas := numPgTotalReplicas - numPgAffectedReplicas
+
+		if numPgRemainingReplicas <= 1 {
+			if numPgRemainingReplicas == 0 {
+				pgsZeroReplicaSlice = append(pgsZeroReplicaSlice, pg)
+			}
+
+			if numPgRemainingReplicas == 1 {
+				pgsOneReplicaSlice = append(pgsOneReplicaSlice, pg)
+			}
+		}
+	}
+
+	return pgsZeroReplicaSlice, pgsOneReplicaSlice
+}
+
+// important
+func GetPoolDataLossProbability(faultBucketOrRouter []string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) (map[string]float64, error) {
+
+	poolDataLossProbabilityMap := make(map[string]float64)
+
+	//get the number of Pg inside each pool
+	poolPgNumberMap, err := GetPoolPgNumberMap(pgDumpOutput, osdDumpOutput)
+
+	if err != nil {
+		error := errors.New("something went wrong in getting PoolPgNumberMap")
+		return poolDataLossProbabilityMap, error
+	}
+
+	//extract Pool from pgsZeroOrOneReplicaMap
+	poolAffectedPgsNumberMap := make(map[string]int)
+	pgsZeroReplicaSlice, pgsOneReplicaSlice := GetPgsWithZeroOrOneRemainingReplica(faultBucketOrRouter, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+	zeroReplicaPoolSlice := ExtractPoolsFromPgSlice(pgsZeroReplicaSlice)
+
+	for _, pg := range pgsOneReplicaSlice {
+		poolId := strings.Split(pg, ".")[0]
+
+		if _, isPresent := poolAffectedPgsNumberMap[poolId]; !isPresent {
+			poolAffectedPgsNumberMap[poolId] = 0
+		}
+
+		poolAffectedPgsNumberMap[poolId] += 1
+	}
+
+	pools := GetPools(pgDumpOutput)
+
+	for _, pool := range pools {
+
+		if utility.StringInSlice(pool, zeroReplicaPoolSlice) {
+			poolAffectedPgsNumberMap[pool] = poolPgNumberMap[pool]
+			//poolAffectedPgsNumberMap[pool] = -1 * poolPgNumberMap[pool]
+			//poolAffectedPgsNumberMap[pool] = -1 * poolAffectedPgsNumberMap[pool]
+		}
+
+		poolDatalossProbability := float64(poolAffectedPgsNumberMap[pool]) / float64(poolPgNumberMap[pool])
+
+		poolDataLossProbabilityMap[pool] = utility.RoundFloat(poolDatalossProbability, 2)
+	}
+
+	return poolDataLossProbabilityMap, nil
 }
 
 func GetTotalAffectedPgsAndOsds(faultPoolSlice []string, pgDumpOutput s.PgDumpOutputStruct) ([]string, []int) {
@@ -473,6 +549,33 @@ func GetBucketName(searchedDevice string, choosenBucketMap map[string][]string) 
 		}
 	}
 	return
+}
+
+func GetBucketQuantity(bucketType string, osdTreeOutput s.OsdTreeOutputStruct) (int, error) {
+	osdTreeStats := osdTreeOutput.Nodes
+	counter := 0
+
+	bucketSlice := []string{"root", "region", "zone", "datacenter", "rack", "chassis", "host", "osd"}
+	isBucketTypeValid := false
+
+	for _, bucketName := range bucketSlice {
+		if bucketName == bucketType {
+			isBucketTypeValid = true
+		}
+	}
+
+	if !isBucketTypeValid {
+		error := errors.New("invalid Bucket Name")
+		return counter, error
+	}
+
+	for _, node := range osdTreeStats {
+		if node.Type == bucketType {
+			counter += 1
+		}
+	}
+
+	return counter, nil
 }
 
 // important
@@ -804,6 +907,28 @@ func GetPool(poolId int, osdDumpOuput s.OsdDumpOutputStruct) (poolStruct s.PoolS
 	return
 }
 
+// important
+func GetPoolPgNumberMap(pgDumpOutput s.PgDumpOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) (map[string]int, error) {
+	poolPgNumberMap := make(map[string]int)
+
+	poolSlice := GetPools(pgDumpOutput)
+
+	for _, poolId := range poolSlice {
+		pId, err := strconv.Atoi(poolId)
+
+		if err != nil {
+			error := errors.New("something went wrong in converting pool_id")
+			return poolPgNumberMap, error
+		}
+
+		pool := GetPool(pId, osdDumpOutput)
+		pgp_num := pool.PgNumTarget //maybe?
+
+		poolPgNumberMap[poolId] = pgp_num
+	}
+	return poolPgNumberMap, nil
+}
+
 func GetOsdIdFromOsdNames(osdNames []string) (osdIds []int) {
 
 	for _, name := range osdNames {
@@ -852,41 +977,57 @@ func GetPublicAddressOsdsMap(osdDumpOutput s.OsdDumpOutputStruct) map[string][]s
 }
 
 // -----------------------OSD PG POOL (HOST) MAPPING FUNCTIONS--------------------------
-func RiskCalculator(faultBucketOrRouter string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) map[string]int {
-	addressRegex, _ := regexp.Compile("([0-9]{2}.){3}[0-9]{1,2}")
+// important
+func RiskCalculator(faultBucketOrRouter string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) []int {
 	var affectedOsds []string
 
-	if addressRegex.MatchString(faultBucketOrRouter) {   //if name is router (address)
-		publicAddressOsdsMap := GetPublicAddressOsdsMap(osdDumpOutput)
-		affectedOsds = publicAddressOsdsMap[faultBucketOrRouter]
+	if faultBucketOrRouter == "" {
+		affectedOsds = []string{}
+	} else {
+		addressRegex, _ := regexp.Compile("([0-9]{2}.){3}[0-9]{1,2}")
 
-	} else {												//if name is bucket
-		faultBucket := GetNode(faultBucketOrRouter, osdTreeOutput)
+		if addressRegex.MatchString(faultBucketOrRouter) { //if name is router (address)
+			publicAddressOsdsMap := GetPublicAddressOsdsMap(osdDumpOutput)
+			affectedOsds = publicAddressOsdsMap[faultBucketOrRouter]
+		} else { //if name is bucket
+			faultBucket := GetNode(faultBucketOrRouter, osdTreeOutput)
 
-		bucketDistributionMap := GetDistributionMap(faultBucket.Type, pgDumpOutput, osdTreeOutput)
-		affectedOsds = bucketDistributionMap[faultBucketOrRouter].Osd.([]string)
+			if faultBucket.Type == "osd" { //if bucket is osd
+				affectedOsds = append(affectedOsds, faultBucketOrRouter)
+			} else { //if bucket is one in the hierarchy from host to root
+				bucketDistributionMap := GetDistributionMap(faultBucket.Type, pgDumpOutput, osdTreeOutput)
+				affectedOsds = bucketDistributionMap[faultBucketOrRouter].Osd.([]string)
+			}
+		}
 	}
 
+	fmt.Printf("affectedOds -> %s\n", affectedOsds)
 	affectedOsdIds := GetOsdIdFromOsdNames(affectedOsds)
 
-	pgNumberOfAffectedReplicaMap := GetPgNumberOfAffectedReplicaMap(affectedOsdIds, pgDumpOutput)
-
-	return pgNumberOfAffectedReplicaMap
+	return affectedOsdIds
 }
 
 // important
-func IncrementalRiskCalculator(faultBucketNames []string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) map[string]int {
+func IncrementalRiskCalculator(faultBucketOrRouter []string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) map[string]int {
 	totalNumberOfAffectedReplicaMap := make(map[string]int)
+	totalAffectedOsdIds := []int{}
 
-	for _, faultBucketName := range faultBucketNames {
-		NumberOfAffectedReplicaMap := RiskCalculator(faultBucketName, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+	for _, faultBucketOrRouterName := range faultBucketOrRouter {
+		affectedOsdIds := RiskCalculator(faultBucketOrRouterName, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+		totalAffectedOsdIds = append(totalAffectedOsdIds, affectedOsdIds...)
+	}
 
-		for pg, numReplicas := range NumberOfAffectedReplicaMap {
-			if _, isPresent := totalNumberOfAffectedReplicaMap[pg]; !isPresent {
-				totalNumberOfAffectedReplicaMap[pg] = numReplicas
-			} else {
-				totalNumberOfAffectedReplicaMap[pg] += numReplicas
-			}
+	//removing duplicate
+	totalAffectedOsdIds = utility.RemoveDuplicateInt(totalAffectedOsdIds)
+	fmt.Printf("total affectedOds -> %d\n", totalAffectedOsdIds)
+
+	pgNumberOfAffectedReplicaMap := GetPgNumberOfAffectedReplicaMap(totalAffectedOsdIds, pgDumpOutput)
+
+	for pg, numReplicas := range pgNumberOfAffectedReplicaMap {
+		if _, isPresent := totalNumberOfAffectedReplicaMap[pg]; !isPresent {
+			totalNumberOfAffectedReplicaMap[pg] = numReplicas
+		} else {
+			totalNumberOfAffectedReplicaMap[pg] += numReplicas
 		}
 	}
 
@@ -922,7 +1063,38 @@ func GetOsdFaultTimeForecasting(osdInitiationDate time.Time, currentOsdLifeTime 
 	return faultTimePrediction, meanDegradationRatePerWeek, nil
 }
 
-func RiskFailureForecasting(osdMap map[string]map[string]interface{}, givenTime time.Time) (osdLifeForecastingMap map[string]float64, warningOsdSlice []string) {
+// // important
+// func RiskFailureForecasting(osdMap map[string]map[string]interface{}, givenTime time.Time) (osdLifeForecastingMap map[string]float64, warningOsdSlice []string) {
+//
+// 	currentTime := time.Now().UTC()
+// 	timeHaed := givenTime.Sub(currentTime)
+// 	timeHaedInWeeks := (timeHaed.Hours() / 24) / 7
+//
+// 	osdLifeForecastingMap = make(map[string]float64)
+//
+// 	for osdName, value := range osdMap {
+// 		meanDegradationRate := GetOsdMeanDegradationRatePerWeek(currentTime, value["initiationDate"].(time.Time), value["currentOsdLifeTime"].(float64))
+//
+// 		osdLifeForecasting := value["currentOsdLifeTime"].(float64) + meanDegradationRate*timeHaedInWeeks
+//
+// 		if osdLifeForecasting > 100.0 {
+// 			osdLifeForecasting = 100.0
+// 		}
+//
+// 		osdLifeForecastingMap[osdName] = utility.RoundFloat(osdLifeForecasting, 2)
+// 	}
+//
+// 	for key, value := range osdLifeForecastingMap {
+// 		if value >= 80 {
+// 			warningOsdSlice = append(warningOsdSlice, key)
+// 		}
+// 	}
+//
+// 	return
+// }
+
+// important (WithSTRUCTURE)
+func RiskFailureForecasting(osdLifetimeInfos []structs.OsdLifetimeInfo, givenTime time.Time) (osdLifeForecastingMap map[string]float64, warningOsdSlice []string) {
 
 	currentTime := time.Now().UTC()
 	timeHaed := givenTime.Sub(currentTime)
@@ -930,16 +1102,16 @@ func RiskFailureForecasting(osdMap map[string]map[string]interface{}, givenTime 
 
 	osdLifeForecastingMap = make(map[string]float64)
 
-	for osdName, value := range osdMap {
-		meanDegradationRate := GetOsdMeanDegradationRatePerWeek(currentTime, value["initiationDate"].(time.Time), value["currentOsdLifeTime"].(float64))
+	for _, osdLifetimeInfo := range osdLifetimeInfos {
+		meanDegradationRate := GetOsdMeanDegradationRatePerWeek(currentTime, osdLifetimeInfo.InitiationDate, osdLifetimeInfo.CurrentOsdLifetime)
 
-		osdLifeForecasting := value["currentOsdLifeTime"].(float64) + meanDegradationRate*timeHaedInWeeks
+		osdLifeForecasting := osdLifetimeInfo.CurrentOsdLifetime + meanDegradationRate*timeHaedInWeeks
 
 		if osdLifeForecasting > 100.0 {
 			osdLifeForecasting = 100.0
 		}
 
-		osdLifeForecastingMap[osdName] = utility.RoundFloat(osdLifeForecasting, 2)
+		osdLifeForecastingMap[osdLifetimeInfo.OsdName] = utility.RoundFloat(osdLifeForecasting, 2)
 	}
 
 	for key, value := range osdLifeForecastingMap {

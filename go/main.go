@@ -1,259 +1,326 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
-	parser "go/pkg"
-	utility "go/tools"
-	"io"
 	"log"
-	"strconv"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
+
+	parser "github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go/pkg"
+	"github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go/structs"
+	utility "github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go/tools"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
+	"github.com/gorilla/mux"
+)
+
+type Forecasting struct {
+	ForecastingTime  time.Time                 `json:"forecasting_time"`
+	OsdLifetimeInfos []structs.OsdLifetimeInfo `json:"osds_lifetime_infos"`
+}
+
+type FaultsProActiveResponse struct {
+	Faults                  []string           `json:"faults"`
+	PoolDatalossProbability map[string]float64 `json:"pool_dataloss_probability"`
+}
+
+type OsdLifitimeForecastingResponse struct {
+	OsdLifetimeForecasting  map[string]float64 `json:"osd_lifetime_forecasting"`
+	WarningOsds             []string           `json:"warning_osds"`
+	PoolDatalossProbability map[string]float64 `json:"pool_dataloss_probability_forecasting"`
+}
+
+var (
+	pgDumpOutput  = utility.ReadPgDumpJson("pg_dump.json")
+	osdTreeOutput = utility.ReadOsdTreeJson("osd-tree.json")
+	osdDumpOutput = utility.ReadOsdDumpJson("osd_dump.json")
+
+	//router declaration
+	router *mux.Router
+
+	faults           []string
+	forecasting      Forecasting
+	osdLifetimeInfos []structs.OsdLifetimeInfo
+	osdLifetime      map[string]map[string]interface{}
+
+	//Prometheus Metrics
+	datalossProbability = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "dataloss_exporter",
+		Name:      "pool_dataloss_probability",
+		Help:      "Probability of data loss referred to the pool.",
+	}, []string{"pool"})
+
+	oneWeekDataLossForecasting = prometheus.NewGaugeVec(prometheus.GaugeOpts{ //insert a structure with 4 metrics
+		Namespace: "dataloss_exporter",
+		Name:      "one_week_pool_dataloss_forecasting",
+		Help:      "Forecasting of probability of data loss referred to the pool.",
+	}, []string{"pool"})
+
+	twoWeeksDataLossForecasting = prometheus.NewGaugeVec(prometheus.GaugeOpts{ //insert a structure with 4 metrics
+		Namespace: "dataloss_exporter",
+		Name:      "two_weeks_pool_dataloss_forecasting",
+		Help:      "Forecasting of probability of data loss referred to the pool.",
+	}, []string{"pool"})
+
+	threeWeeksDataLossForecasting = prometheus.NewGaugeVec(prometheus.GaugeOpts{ //insert a structure with 4 metrics
+		Namespace: "dataloss_exporter",
+		Name:      "three_weeks_pool_dataloss_forecasting",
+		Help:      "Forecasting of probability of data loss referred to the pool.",
+	}, []string{"pool"})
+
+	fourWeeksDataLossForecasting = prometheus.NewGaugeVec(prometheus.GaugeOpts{ //insert a structure with 4 metrics
+		Namespace: "dataloss_exporter",
+		Name:      "four_weeks_pool_dataloss_forecasting",
+		Help:      "Forecasting of probability of data loss referred to the pool.",
+	}, []string{"pool"})
 )
 
 func main() {
-	log.SetOutput(io.Discard) //disable log
+	//router instantiation
+	router = mux.NewRouter()
 
-	//UnMarshalling Json
-	pgDumpOutput := utility.ReadPgDumpJson("pg_dump.json")
-	osdTreeOutput := utility.ReadOsdTreeJson("osd-tree.json")
-	osdDumpOutput := utility.ReadOsdDumpJson("osd_dump.json")
-
-	// fmt.Println("------------------------------------------")
-	// fmt.Printf("  PG-DUMP JSON Information Gathering\n\n")
-	// //---getting different pg_ids---
-	// pgSlice := parser.GetPgs(pgDumpOutput)
-	// fmt.Printf("#Different pgids  -> %d\n\n", len(pgSlice))
-	// fmt.Println("------------------------------------------")
-
-	// //---getting pools---
-	// poolSlice := parser.GetPools(pgDumpOutput)
-	// fmt.Printf("Pools -> %s\n", poolSlice)
-	// fmt.Printf("#Pools -> %d\n\n", len(poolSlice))
-	// fmt.Println("------------------------------------------")
-
-	// //---getting_osds---
-	// osds := parser.GetOsds(pgDumpOutput)
-	// fmt.Printf("OSDs ->%d\n", osds)
-	// fmt.Printf("#OSDs ->%d\n\n", len(osds))
-	// fmt.Println("------------------------------------------")
-
-	// //---getting_pgs_details---
-	// osdPgMap := parser.GetOsdPgMap(pgDumpOutput)
-	// osdPgNumberMap := parser.GetNumberOfAssociatedPgsPerOsdMap(osdPgMap)
-	// fmt.Printf("Number of mapped PGs per OSD ->%d\n\n", osdPgNumberMap)
-	// fmt.Printf("#PGs ->%d\n\n", parser.GetTotalNumberOfPgs(osdPgNumberMap))
-	// fmt.Println("------------------------------------------")
-
-	// //---getting_pgIdOsdMap---
-	// fmt.Println("-> pgIdOsdMap")
-	// pgIdOsdMap := parser.GetPgOsdMap(pgDumpOutput)
-	// fmt.Printf("pgid 31.0 is on these osds -> %d\n\n", pgIdOsdMap["31.0"])
-	// fmt.Println("------------------------------------------")
-
-	// //---osd_pgs_mapping---
-	// fmt.Println("-> osd_pgs_mapping")
-	// numberOfPg := parser.GetNumberOfAssociatedPgsPerOsdMap(osdPgMap)[3]
-	// fmt.Printf("OSD 3 contains these #%d PGs-> %s\n\n", numberOfPg, osdPgMap[3])
-	// fmt.Println("------------------------------------------")
-
-	// //------osd_pool_pgs_map------
-	// //	   {(osd,pool):[pgs]}
-	// fmt.Println("-> osd_pool_pgs_map   {(osd,pool):[pgs]}")
-	// osdPoolPgMap := parser.GetOsdPoolPgMap(pgDumpOutput)
-	// fmt.Printf("OSD 6 pool 31 contains these PGs -> %s\n\n", osdPoolPgMap[parser.OsdPoolTuple{Osd: 6, Pool: "31"}])
-
-	// //	   {(osd,pool):{pg:number_replicas},...}
-	// fmt.Println("-> osd_pool_pgs_map   {(osd,pool):{pg:number_replicas},...}")
-	// osdPollNumberPerPgsMap := parser.GetOsdPoolNumberPerPgsMap(pgDumpOutput)
-	// fmt.Printf("OSD 6 pool 31 contains these PGs -> %v\n\n", osdPollNumberPerPgsMap[parser.OsdPoolTuple{Osd: 6, Pool: "31"}])
-	// fmt.Println("------------------------------------------")
-
-	// //---osds_containing_pool---
-	// fmt.Println("->   Pool->OSDs")
-	// pool := "3"
-	// osdsContaingPool := parser.GetOsdsContainingPool(pool, pgDumpOutput)
-	// fmt.Printf("Pool: %s is spread between these OSDs-> %v\n\n", pool, osdsContaingPool)
-	// fmt.Println("------------------------------------------")
-
-	// //---osds_containing_pg---
-	// fmt.Println("->   PG->OSDs")
-	// givenPg := "19.1f"
-	// osdsContainingPg := parser.GetOsdsContainingPg(givenPg, pgDumpOutput)
-	// fmt.Printf("PG: %s is spread between these OSDs-> %d\n\n", givenPg, osdsContainingPg)
-	// fmt.Println("------------------------------------------")
-
-	// //---affected pool for osd crush---
-	// fmt.Println("-> Affected pools")
-	// faultOsd := 2
-	// affectedPools := parser.GetAffectedPools(faultOsd, pgDumpOutput)
-	// fmt.Printf("Affected pools for crush on OSD: %d  -> #%d ->  %v\n\n", faultOsd, len(affectedPools), affectedPools)
-	// fmt.Println("------------------------------------------")
-
-	// //---affected pg for osd crush---
-	// fmt.Println("-> Affected PGs")
-	// affectedPgs := parser.GetAffectedPgs(faultOsd, pgDumpOutput)
-	// fmt.Printf("Affected pgid for crush on OSD: %d -> %s\n\n", faultOsd, affectedPgs)
-	// fmt.Println("------------------------------------------")
-
-	// //---percentage of lost replicas for single pgid_item in fault_osd--- (OSD DEGRADATION)
-	// fmt.Printf("-> lost OSD: %d -> percentage%% of lost replicas for %s---(OSD DEGRADATION)\n", faultOsd, givenPg)
-	// percentage := parser.PercentageCalculationAffectedReplicasPg(faultOsd, givenPg, pgDumpOutput, osdDumpOutput)
-	// fmt.Printf("\nPercentage of %s replicas lost -> %.2f%%\n\n", givenPg, percentage)
-	// fmt.Println("------------------------------------------")
-
-	// parser.WarningCheck(percentage, faultOsd, givenPg, pgDumpOutput, osdDumpOutput)
-	// fmt.Printf("---------------------------------------------------------------\n\n")
-
-	// //---if these osds crush which are the affected Pgs and Pools?---
-	// faultOsdSlice := []int{2, 4, 3}
-	// fmt.Printf("-> If these osds:%d crush which Pgs and Pools are affected?\n", faultOsdSlice)
-	// totalAffectedPgs, totalAffectedPools := parser.GetTotalAffectedPgsAndPools(faultOsdSlice, pgDumpOutput)
-	// fmt.Printf("\n#%d Total affected pgs for osds:%d  -> (map is hidden, uncomment to view)", len(totalAffectedPgs), faultOsdSlice)
-	// //fmt.Printf("%s\n\n", totalAffectedPgs)
-	// fmt.Printf("\n#%d Total affected pools for osds:%d  -> %s\n\n", len(totalAffectedPools), faultOsdSlice, totalAffectedPools)
-
-	// //    {pg: number_affected_replicas}
-	// fmt.Printf("->   {pg: number_affected_replicas}\n")
-	// pgNumberOfAffectedReplicaMap := parser.GetPgNumberOfAffectedReplicaMap(faultOsdSlice, pgDumpOutput)
-	// fmt.Printf("%v\n\n", pgNumberOfAffectedReplicaMap)
-
-	// //inHealthPgs, goodPgs, warningPgs, lostPgds
-	// inHealthPgs, goodPgs, warningPgs, lostPgs := parser.GetPgsWithHighProbabilityOfLosingData(pgNumberOfAffectedReplicaMap, pgDumpOutput, osdDumpOutput)
-	// fmt.Printf("---------------------------------------------------------------\n")
-
-	// fmt.Printf("inHealthPgs (replicaLost=0%%):\n\n%s\n", inHealthPgs)
-	// fmt.Printf("---------------------------------------------------------------\n")
-
-	// fmt.Printf("goodPgs (0<replicaLost<50%%):\n\n%s\n\n", goodPgs)
-	// goodPgsPoolSlice := parser.ExtractPoolsFromPgSlice(goodPgs)
-	// fmt.Printf("pools ->%s\n", goodPgsPoolSlice)
-	// fmt.Printf("previous pools are spread on these osds ->%d\n", parser.ExtractOsdsFromPoolSlice(goodPgsPoolSlice, pgDumpOutput))
-	// fmt.Printf("---------------------------------------------------------------\n")
-
-	// fmt.Printf("warningPgs (replicaLost>=50%% and replicaLost<100%%):\n\n%s\n\n", warningPgs)
-	// warningPgsPoolSlice := parser.ExtractPoolsFromPgSlice(warningPgs)
-	// fmt.Printf("pools ->%s\n", warningPgsPoolSlice)
-	// fmt.Printf("previous pools are spread on these osds ->%d\n", parser.ExtractOsdsFromPoolSlice(warningPgsPoolSlice, pgDumpOutput))
-	// fmt.Printf("---------------------------------------------------------------\n")
-
-	// fmt.Printf("lostPgs  (replicaLost=100%%):\n\n%s\n\n", lostPgs)
-	// lostPgsPoolSlice := parser.ExtractPoolsFromPgSlice(lostPgs)
-	// fmt.Printf("pools ->%s\n", lostPgsPoolSlice)
-	// fmt.Printf("previous pools are spread on these osds ->%d\n", parser.ExtractOsdsFromPoolSlice(lostPgsPoolSlice, pgDumpOutput))
-	// fmt.Printf("---------------------------------------------------------------\n")
-
-	// //checkTotal := len(inHealthPgs) + len(goodPgs) + len(warningPgs) + len(lostPgs)
-	// //fmt.Printf("\ncheck total: %d\n", checkTotal)
-
-	// //    {pool:[wPgs],...} -- Pool WarningPg Map
-	// fmt.Printf("->Pool WarningPg Map  {pool:[wPgs],...}   -- Fault Osds:%d\n\n", faultOsdSlice)
-	// poolWarningPgMap := parser.GetPoolWarningPgMap(faultOsdSlice, pgDumpOutput, osdDumpOutput)
-	// fmt.Printf("%v\n", poolWarningPgMap)
-	// fmt.Printf("---------------------------------------------------------------\n")
-
-	// //    {pool:[lPgs],...}
-	// fmt.Printf("->Pool LostPg Map  {pool:[lPgs],...}   -- Fault Osds:%d\n\n", faultOsdSlice)
-	// poolLostPgMap := parser.GetPoolLostPgMap(faultOsdSlice, pgDumpOutput, osdDumpOutput)
-	// fmt.Printf("%v\n", poolLostPgMap)
-	// fmt.Printf("---------------------------------------------------------------\n")
-
-	// //---if these pools crush which are the affected Pgs and osds?---(has it sense?)
-	// fmt.Printf("-> If these pools crush which are the affected Pgs and osds?\n\n")
-	// faultPools := []string{"1", "31"}
-	// affectedPgs, affectedOsds := parser.GetTotalAffectedPgsAndOsds(faultPools, pgDumpOutput)
-	// fmt.Printf("Affected OSDs: %d\n\n", affectedOsds)
-	// fmt.Printf("Affected Pgs: %d\n\n", len(affectedPgs))
-	// fmt.Printf("---------------------------------------------------------------\n")
-
-	// //-----------------------osd-tree json-------------------------------------------
-	// fmt.Printf("  OSD-TREE JSON Information Gathering\n\n")
-	// fmt.Printf("-> Specialized Distribution Map information gathering\n\n")
-
-	// hostName := "sv81" //map {hostName1: BucketDistribution , hostName2: BucketDistribution}
-	// hostDistributionMap := parser.GetDistributionMap("host", pgDumpOutput, osdTreeOutput)
-	// fmt.Printf("host %s contains these Osds-> %v\n\n", hostName, hostDistributionMap[hostName].Osd)
-	// //---------------------------------
-
-	// chassisName := "0a043220-0123456789"
-	// chassisDistributionMap := parser.GetDistributionMap("chassis", pgDumpOutput, osdTreeOutput)
-	// fmt.Printf("chassis %s contains these Hosts-> %v\n\n", chassisName, chassisDistributionMap[chassisName].Host)
-	// fmt.Printf("chassis %s contains these Osds-> %v\n", chassisName, chassisDistributionMap[chassisName].Osd)
-	// fmt.Printf("\n---------------------------------------------------------------\n")
-	// //---------------------------------
-
-	// fmt.Printf("-> Getting node information\n\n")
-	// node := parser.GetNode("0a043220-0123456789", osdTreeOutput)
-	// fmt.Printf("nodeName=%s, nodeId=%d, nodeType=%s", node.Name, node.ID, node.Type)
-	// fmt.Printf("\n---------------------------------------------------------------\n")
-
-	// //-----------------------osd-dump json-------------------------------------------
-	// fmt.Printf("  OSD-DUMP JSON Information Gathering\n\n")
-	// fmt.Printf("-> Getting pool information\n\n")
-	// poolId := 3
-	// poolStruct := parser.GetPool(poolId, osdDumpOutput)
-	// fmt.Printf("pool=%d, poolName=%s, size=%d, min_size=%d", poolStruct.Pool, poolStruct.PoolName, poolStruct.Size, poolStruct.MinSize)
-	// fmt.Printf("\n---------------------------------------------------------------\n")
-
-	//-----------------------Incremental Risk Calculator-------------------------------------------
-	// fmt.Printf("-> If we switch off these Buckets how the risk of the pgs will change?\n\n")
-	// fmt.Printf("		RISK CALCULATOR		\n\n")
-	// host := "sv81"
-	// pgNumberOfAffectedReplicaMap1 := parser.RiskCalculator(host, pgDumpOutput, osdTreeOutput, osdDumpOutput)
-	// fmt.Printf("(%s) NumberOfAffectedReplicaMap: %v\n\n", host, pgNumberOfAffectedReplicaMap1)
-
-	//osd->public adress mapping
-	fmt.Printf("\n---------------------------------------------------------------\n")
-	fmt.Println(" -> Public Address - osds Map")
-
-	publicAddressOsdsMap := parser.GetPublicAddressOsdsMap(osdDumpOutput)
-	fmt.Printf("\n%s\n", publicAddressOsdsMap)
-
-	fmt.Printf("---------------------------------------------------------------\n")
-	fmt.Printf("		INCREMENTAL RISK CALCULATOR		\n\n")
-
-	//faults := []string{"default"}  //buckets
-	//faults := []string{"sv81", "sv82", "sv61", "newnamefor-sv53"}
-	//faults := []string{"10.22.22.15", "10.22.22.3", "10.22.22.4"}
-	faults := []string{"sv81", "10.22.22.3"}
-
-	fmt.Printf("fault Bucket or Network Device -> %s\n\n", faults)
-	incrementalPgAffectedReplicaMap := parser.IncrementalRiskCalculator(faults, pgDumpOutput, osdTreeOutput, osdDumpOutput)
-	fmt.Printf("%v\n\n", incrementalPgAffectedReplicaMap)
-
-	//fmt.Printf("[audit] len of incremental map %v\n\n", len(incrementalPgAffectedReplicaMap))
-	fmt.Printf("\n---------------------------------------------------------------\n")
-
-	inHealthPgs1, goodPgs1, warningPgs1, lostPgs1 := parser.GetPgsWithHighProbabilityOfLosingData(incrementalPgAffectedReplicaMap, pgDumpOutput, osdDumpOutput)
-	fmt.Printf("inHealthPgs (replicaLost=0%%):\n\n%s\n\n", inHealthPgs1)
-	fmt.Printf("goodPgs (0<replicaLost<50%%):\n\n%s\n\n", goodPgs1)
-	fmt.Printf("warningPgs (replicaLost>=50%% and replicaLost<100%%):\n\n%s\n\n", warningPgs1)
-	fmt.Printf("lostPgs  (replicaLost=100%%):\n\n%s\n", lostPgs1)
-	fmt.Printf("\n---------------------------------------------------------------\n")
-
-	//-------------------------------------------------------------------------------------------
-	osdInitiationDate := time.Date(2020, time.Month(3), 21, 1, 10, 30, 0, time.UTC)
-	currentOsdLifeTime := utility.GetFloatRandomNumber(30, 90)
-	fmt.Printf("		RISK FAILURE FORECASTING     \n\n")
-	fmt.Printf(" -> Given an Osd installed on date: %s with current lifetime equal -> %.2f%%\n\n", osdInitiationDate, currentOsdLifeTime)
-
-	if faultTimePrediction, meanDegradationRate, err := parser.GetOsdFaultTimeForecasting(osdInitiationDate, currentOsdLifeTime); err == nil {
-		fmt.Printf("with a degradation rate of %f it will reach the end of its optimal performance on date %v\n", meanDegradationRate, faultTimePrediction.Format("02-01-2006"))
+	//http Servers creation
+	server := &http.Server{
+		Addr:    ":8081",
+		Handler: router,
 	}
 
-	fmt.Printf("\n---------------------------------------------------------------\n")
-	fmt.Printf("\nGiven a slice of osds and a date in the future, this function evaluate their lifetime to that date,\nand point out the ones with lifetime over 80%%\n")
-	//osdMap mock creation
-	osdMap := make(map[string]map[string]interface{})
-	for i := 1; i <= 8; i++ {
-		osdMap["osd."+strconv.Itoa(i)] = map[string]interface{}{"initiationDate": time.Date(utility.GetIntRandomNumber(2018, 2023), time.Month(utility.GetIntRandomNumber(1, 12)), utility.GetIntRandomNumber(1, 30), utility.GetIntRandomNumber(0, 24), utility.GetIntRandomNumber(0, 59), 0, 0, time.UTC), "currentOsdLifeTime": utility.GetFloatRandomNumber(30, 80)}
+	//prometheus
+	prometheus.MustRegister(datalossProbability, oneWeekDataLossForecasting, twoWeeksDataLossForecasting,
+		threeWeeksDataLossForecasting, fourWeeksDataLossForecasting)
+
+	//promHandler := promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
+
+	//creation of /metrics endpoint
+	router.Handle("/metrics", promhttp.Handler())
+
+	//creation of REST endpoints
+	router.HandleFunc("/health", getInfoHealth).Methods("GET")
+	router.HandleFunc("/dataloss-prob", datalossProb).Methods("GET")
+	router.HandleFunc("/dataloss-prob/component/faults", postFaultsReActive).Methods("POST")
+	router.HandleFunc("/dataloss-prob/faults", postFaultsProActive).Methods("POST")
+	router.HandleFunc("/dataloss-prob/forecasting", postForecastingProActive).Methods("POST")
+	router.HandleFunc("/dataloss-prob/component/forecasting", postForecastingReActive).Methods("POST")
+
+	//gorouting to properly handle server.ListenAndServe error
+	go func() {
+		if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("HTTP server error: %v", err)
+		}
+		log.Println("Stopped serving new connections.")
+	}()
+
+	//Chanel creation of buffer_size = 1 to receive os.Signal
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGTSTP)
+	<-sigChan
+
+	shutdownCtx, shutdownRelease := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownRelease()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		log.Fatalf("HTTP shutdown error: %v", err)
+		//server.Close()  //to force the server to close if it doesn't close gracefully
+	}
+	log.Println("Graceful shutdown complete.")
+}
+
+// pro-active -> ceph administrator
+func getInfoHealth(w http.ResponseWriter, r *http.Request) {
+	//convert data to json string
+	b, err := json.Marshal("System-Health: true ")
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest) //in case of conversion error
+		return
 	}
 
-	forecastingTime := time.Date(2023, time.Month(8), 7, 1, 10, 30, 0, time.UTC)
-	fmt.Printf("\nCurrent OsdLifetimeMap:\n%v\n", osdMap)
-	fmt.Printf("\nDate in the future:%s\n", forecastingTime)
-	osdLifeForecastingMap, warningOsdSlice := parser.RiskFailureForecasting(osdMap, forecastingTime)
-	fmt.Printf("\nFuture OsdLifetimeMap: %v\n", osdLifeForecastingMap)
-	fmt.Printf("These osds are nearing the end of their optimal life (over 80%%) %s\n\n", warningOsdSlice)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(b) //write the data to the connection
+}
 
-	//Next step -> getting currentOsdLifeTime from disk lifetime
+func datalossProb(w http.ResponseWriter, r *http.Request) {
+	//fmt.Printf("->%v", Faultsdb)
+	//poolDataLossProbability, err := parser.GetPoolDataLossProbability(Faultsdb[len(Faultsdb)-1].Osds, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+	//faults.Osds
+	poolDataLossProbability, err := parser.GetPoolDataLossProbability(faults, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+	if err != nil {
+		return
+	}
+
+	//Prometheus metric handling
+	pools := parser.GetPools(pgDumpOutput)
+	for _, pool := range pools {
+		datalossProbability.With(prometheus.Labels{"pool": "Pool: " + pool}).Set(poolDataLossProbability[pool])
+	}
+
+	//REST API handling
+	b, err := json.Marshal(poolDataLossProbability)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest) //in case of conversion error
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(b) //write the data to the connection
+}
+
+// re-active -> python component
+func postFaultsReActive(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	err := json.NewDecoder(r.Body).Decode(&faults)
+	if err != nil {
+		log.Fatalln("There was an error decoding the request body into the struct")
+	}
+
+	// - must update dumps jsons
+	fmt.Printf("faultOsds -> %v", faults)
+	//pool data loss probability calculation						//faults.Osds
+	poolDataLossProbability, err := parser.GetPoolDataLossProbability(faults, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+	if err != nil {
+		return
+	}
+
+	//Prometheus metric handling/triggering
+	pools := parser.GetPools(pgDumpOutput)
+	for _, pool := range pools {
+		datalossProbability.With(prometheus.Labels{"pool": "Pool: " + pool}).Set(poolDataLossProbability[pool])
+	}
+
+	err = json.NewEncoder(w).Encode(&faults)
+	if err != nil {
+		log.Fatalln("There was an error encoding the initialized struct")
+	}
+}
+
+// pro-active -> ceph administrator
+func postFaultsProActive(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	err := json.NewDecoder(r.Body).Decode(&faults)
+	if err != nil {
+		log.Fatalln("There was an error decoding the request body into the struct")
+	}
+
+	// - must update dumps jsons
+
+	//pool data loss probability calculation						//faults.Osds
+	poolDataLossProbability, err := parser.GetPoolDataLossProbability(faults, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+	if err != nil {
+		return
+	}
+
+	response := FaultsProActiveResponse{
+		Faults:                  faults,
+		PoolDatalossProbability: poolDataLossProbability,
+	}
+
+	err = json.NewEncoder(w).Encode(&response)
+	if err != nil {
+		log.Fatalln("There was an error encoding the initialized struct")
+	}
+}
+
+// pro-active -> ceph administrator
+func postForecastingProActive(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	err := json.NewDecoder(r.Body).Decode(&forecasting)
+
+	if err != nil {
+		log.Fatalln("There was an error decoding the request body into the struct")
+	}
+
+	// - must update dumps jsons
+	forecastingTime := forecasting.ForecastingTime //time given by administrator through post
+	//forecastingTime := time.Date(2023, time.Month(8), 7, 1, 10, 30, 0, time.UTC)
+	fmt.Printf("forecastingTime-> %v\n forecasting.OsdLifetimeInfos-> %v\n", forecastingTime, forecasting.OsdLifetimeInfos)
+
+	osdLifeForecastingMap, warningOsdSlice := parser.RiskFailureForecasting(forecasting.OsdLifetimeInfos, forecastingTime)
+	fmt.Printf("osdLifeForecastingMap-> %v\n warningOsdSlice-> %v\n", osdLifeForecastingMap, warningOsdSlice)
+
+	//pool data loss probability calculation on WarningOsdSlice
+	poolDataLossProbability, err := parser.GetPoolDataLossProbability(warningOsdSlice, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+	if err != nil {
+		return
+	}
+
+	response := OsdLifitimeForecastingResponse{
+		OsdLifetimeForecasting:  osdLifeForecastingMap,
+		WarningOsds:             warningOsdSlice,
+		PoolDatalossProbability: poolDataLossProbability,
+	}
+
+	err = json.NewEncoder(w).Encode(&response)
+	if err != nil {
+		log.Fatalln("There was an error encoding the initialized struct")
+	}
+}
+
+// re-active -> python component
+func postForecastingReActive(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	err := json.NewDecoder(r.Body).Decode(&osdLifetimeInfos)
+
+	if err != nil {
+		log.Fatalln("There was an error decoding the request body into the struct")
+	}
+
+	// - must update dumps jsons
+
+	progressiveWeekDays := []int{7, 14, 21, 28}
+
+	for numWeek, numDays := range progressiveWeekDays {
+
+		daysForwardTime := time.Now().AddDate(0, 0, numDays)
+
+		_, warningOsdSlice := parser.RiskFailureForecasting(osdLifetimeInfos, daysForwardTime)
+
+		//pool data loss probability calculation on WarningOsdSlice
+		poolDataLossProbability, err := parser.GetPoolDataLossProbability(warningOsdSlice, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+		if err != nil {
+			return
+		}
+
+		pools := parser.GetPools(pgDumpOutput)
+
+		//Prometheus metric handling/triggering
+		switch numWeek {
+		case 0:
+			for _, pool := range pools {
+				oneWeekDataLossForecasting.With(prometheus.Labels{"pool": "Pool: " + pool}).Set(poolDataLossProbability[pool])
+			}
+		case 1:
+			for _, pool := range pools {
+				twoWeeksDataLossForecasting.With(prometheus.Labels{"pool": "Pool: " + pool}).Set(poolDataLossProbability[pool])
+			}
+		case 2:
+			for _, pool := range pools {
+				threeWeeksDataLossForecasting.With(prometheus.Labels{"pool": "Pool: " + pool}).Set(poolDataLossProbability[pool])
+			}
+		case 3:
+			for _, pool := range pools {
+				fourWeeksDataLossForecasting.With(prometheus.Labels{"pool": "Pool: " + pool}).Set(poolDataLossProbability[pool])
+			}
+		}
+	}
+
+	err = json.NewEncoder(w).Encode(&osdLifetimeInfos)
+	if err != nil {
+		log.Fatalln("There was an error encoding the initialized struct")
+	}
 }

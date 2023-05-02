@@ -3,13 +3,14 @@ package utility
 import (
 	"encoding/json"
 	"fmt"
-	s "go/structs"
 	"io"
 	"log"
 	"math"
 	"math/rand"
 	"os"
 	"time"
+
+	s "github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go/structs"
 )
 
 func ReadPgDumpJson(jsonFileName string) s.PgDumpOutputStruct {
@@ -154,4 +155,13 @@ func GetIntRandomNumber(min int, max int) (randomNumber int) {
 
 	randomNumber = rand.Intn(max-min+1) + min
 	return
+}
+
+func StringInSlice(a string, list []string) bool {
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
 }

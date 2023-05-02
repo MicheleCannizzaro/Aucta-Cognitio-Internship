@@ -1,5 +1,7 @@
 package structs
 
+import "time"
+
 type PgDumpOutputStruct struct {
 	PgReady bool `json:"pg_ready"`
 	PgMap   struct {
@@ -657,4 +659,10 @@ type OsdDumpOutputStruct struct {
 	} `json:"crush_node_flags,omitempty"`
 	DeviceClassFlags struct {
 	} `json:"device_class_flags,omitempty"`
+}
+
+type OsdLifetimeInfo struct {
+	OsdName            string    `json:"osd_name"`
+	InitiationDate     time.Time `json:"initiation_date"`
+	CurrentOsdLifetime float64   `json:"current_osd_lifetime"`
 }

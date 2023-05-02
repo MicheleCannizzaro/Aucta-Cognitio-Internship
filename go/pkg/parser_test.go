@@ -1,8 +1,9 @@
 package pkg
 
 import (
-	utility "go/tools"
 	"testing"
+
+	utility "github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go/tools"
 )
 
 func TestGetPgOsdMap(t *testing.T) {
