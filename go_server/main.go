@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
-	"os/exec"
+	//"os/exec"
 	"os/signal"
 	"regexp"
 	"strconv"
@@ -468,7 +468,7 @@ func postFaultsReActive(w http.ResponseWriter, r *http.Request) {
 
 // endpoint: /dataloss-prob/component/forecasting
 func postForecastingReActive(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("REST Server: Post request arrived\n endpoint: /dataloss-prob/component/faults")
+	fmt.Println("REST Server: Post request arrived\n endpoint: /dataloss-prob/component/forecasting")
 
 	w.Header().Set("Content-Type", "application/json")
 
@@ -564,22 +564,22 @@ func postForecastingReActive(w http.ResponseWriter, r *http.Request) {
 }
 
 // Stats updater function
-func clusterStatsGathering() error {
-
-	// cmd2 := exec.Command("ceph", "osd", "dump", "--format=json", ">", "osd_dump.json") //do it also for pg_dump and osd-tree
-	// err2 := cmd2.Run()
-	// if err2 != nil {
-	// 	fmt.Println(err2)
-	// }
-
-	cmd1 := exec.Command("sshpass", "-p", "konoa", "scp", "cephadm@192.168.122.224:/osd_dump1.json", "/home/michele/Scrivania")
-	err1 := cmd1.Run()
-	if err1 != nil {
-		fmt.Println(err1)
-	}
-
-	return nil
-}
+// func clusterStatsGathering() error {
+//
+// 	// cmd2 := exec.Command("ceph", "osd", "dump", "--format=json", ">", "osd_dump.json") //do it also for pg_dump and osd-tree
+// 	// err2 := cmd2.Run()
+// 	// if err2 != nil {
+// 	// 	fmt.Println(err2)
+// 	// }
+//
+// 	cmd1 := exec.Command("sshpass", "-p", "konoa", "scp", "cephadm@192.168.122.224:/osd_dump1.json", "/home/michele/Scrivania")
+// 	err1 := cmd1.Run()
+// 	if err1 != nil {
+// 		fmt.Println(err1)
+// 	}
+//
+// 	return nil
+// }
 
 func main() {
 	//---------------------------------------------------------------------------------------------------------
