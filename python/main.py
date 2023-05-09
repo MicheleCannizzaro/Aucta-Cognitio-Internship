@@ -16,9 +16,9 @@ def data_loss_probability():
     osd_in_prometheus = set(osd_in_prometheus)
    
     #extract osd_dump     <- LOOK: to uncomment
-    #os.system('ceph osd dump --format=json > osd_dump.json')
+    os.system('ceph osd dump --format=json > osd_dump.json')
     #do an md5 to understand if dump is the same of before or not...
-    #is_same= md5_checker("osd_dump.json")
+    is_same= md5_checker("osd_dump.json")
 
     #if not is_same:
     #    update old file with new one  (probably it is not needed)
@@ -39,19 +39,19 @@ def data_loss_probability():
     #check if there is any difference between osd_dump_in and osd_in extracted from prometheus 
     if osd_dump_in != osd_in_prometheus:
         #calculate osd_out                              #LOOK: <- uncomment 
-        # if len(osd_in_prometheus)>=len(osd_dump_in):
-        #     osd_out= set(osd_in_prometheus)-set(osd_dump_in)
-        # else:		
-        #     osd_out= set(osd_dump_in)-set(osd_in_prometheus)
+         if len(osd_in_prometheus)>=len(osd_dump_in):
+             osd_out= set(osd_in_prometheus)-set(osd_dump_in)
+         else:		
+             osd_out= set(osd_dump_in)-set(osd_in_prometheus)
+        
+         osd_out=list(osd_out)
 
-        # osd_out=list(osd_out)
+    #send query
+    osd_out = ["osd.1","osd.2","10.22.22.3", "sv61"] #fake_data  <- LOOK: to comment
+    url = 'http://localhost:8081/dataloss-prob/component/faults'
 
-        #send query
-        osd_out = ["osd.1","osd.2","10.22.22.3", "sv61"] #fake_data  <- LOOK: to comment
-        url = 'http://localhost:8081/dataloss-prob/component/faults'
-
-        response = requests.post(url, json= osd_out)
-        print(response.text)
+    response = requests.post(url, json= osd_out)
+    print(response.text)
 
 #dataloss-prob/component/forecasting
 def data_loss_forecasting():
@@ -104,7 +104,7 @@ def md5_calculator(file_name):
 
 def init():
     #extract osd_dump     <- LOOK: to uncomment
-    #os.system('ceph osd dump --format=json > osd_dump.json') 
+    os.system('ceph osd dump --format=json > osd_dump.json') 
     global osd_dump_md5
     osd_dump_md5 = md5_calculator("osd_dump.json")
 

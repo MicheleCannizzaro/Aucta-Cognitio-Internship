@@ -107,7 +107,8 @@ func (f *RpcServer) GiveFaults(args *Args, reply *RpcResponseStruct) error {
 	fmt.Println("RPC Server: GiveFaults requested")
 
 	//update pgDumpOutput, osdTreeOutput and osdDumpOutput
-	//...
+	// - must update dumps jsons
+	clusterStatsGathering() //<-LOOK
 
 	for _, bucket := range args.Faults {
 		// Check over the acquired inputs
@@ -147,7 +148,8 @@ func (f *RpcServer) GiveFaultsForecasting(args *Args1, reply *RpcResponseStruct)
 	fmt.Println("RPC Server: GiveFaultsForecasting requested")
 
 	//update pgDumpOutput, osdTreeOutput and osdDumpOutput
-	//...
+	// - must update dumps jsons
+	clusterStatsGathering() //<-LOOK
 
 	osdLifetimeInfos := []structs.OsdLifetimeInfo{}
 
@@ -275,7 +277,7 @@ func postFaultsProActive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// - must update dumps jsons
-	//clusterStatsGathering()
+	clusterStatsGathering()
 
 	//pool data loss probability calculation
 	poolDataLossProbability, err := parser.GetPoolDataLossProbability(faults, pgDumpOutput, osdTreeOutput, osdDumpOutput)
@@ -355,7 +357,7 @@ func postForecastingProActive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// - must update dump jsons	//<-LOOK
-	//clusterStatsGathering()
+	clusterStatsGathering()
 
 	forecastingTime := forecasting.ForecastingTime //time given by administrator through post
 	fmt.Printf("ForecastingTime-> %v\n", forecastingTime)
@@ -432,7 +434,7 @@ func postFaultsReActive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// - must update dumps jsons
-	//clusterStatsGathering()		//<-LOOK
+	clusterStatsGathering() //<-LOOK
 
 	//pool data loss probability calculation
 	poolDataLossProbability, err := parser.GetPoolDataLossProbability(faults, pgDumpOutput, osdTreeOutput, osdDumpOutput)
@@ -513,7 +515,7 @@ func postForecastingReActive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// - must update dumps jsons
-	//clusterStatsGathering()		//<- LOOK
+	clusterStatsGathering() //<- LOOK
 
 	progressiveWeekDays := []int{7, 14, 21, 28}
 
@@ -564,22 +566,33 @@ func postForecastingReActive(w http.ResponseWriter, r *http.Request) {
 }
 
 // Stats updater function
-// func clusterStatsGathering() error {
-//
-// 	// cmd2 := exec.Command("ceph", "osd", "dump", "--format=json", ">", "osd_dump.json") //do it also for pg_dump and osd-tree
-// 	// err2 := cmd2.Run()
-// 	// if err2 != nil {
-// 	// 	fmt.Println(err2)
-// 	// }
-//
-// 	cmd1 := exec.Command("sshpass", "-p", "konoa", "scp", "cephadm@192.168.122.224:/osd_dump1.json", "/home/michele/Scrivania")
-// 	err1 := cmd1.Run()
-// 	if err1 != nil {
-// 		fmt.Println(err1)
-// 	}
-//
-// 	return nil
-// }
+func clusterStatsGathering() error {
+
+	cmd := exec.Command("ceph", "osd", "dump", "--format=json", ">", "osd_dump.json") //do it also for pg_dump and osd-tree
+	err := cmd.Run()
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	cmd1 := exec.Command("ceph", "pg", "dump", "--format=json", ">", "pg_dump.json") //do it also for pg_dump and osd-tree
+	err1 := cmd1.Run()
+	if err1 != nil {
+		fmt.Println(err1)
+	}
+	cmd2 := exec.Command("ceph", "osd", "tree", "--format=json", ">", "osd-tree.json") //do it also for pg_dump and osd-tree
+	err2 := cmd2.Run()
+	if err2 != nil {
+		fmt.Println(err2)
+	}
+
+	//cmd1 := exec.Command("sshpass", "-p", "konoa", "scp", "cephadm@192.168.122.224:/osd_dump1.json", "/home/michele/Scrivania")
+	//err1 := cmd1.Run()
+	//if err1 != nil {
+	//	fmt.Println(err1)
+	//}
+
+	return nil
+}
 
 func main() {
 	//---------------------------------------------------------------------------------------------------------
