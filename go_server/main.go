@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
-	//"os/exec"
+	"os/exec"
 	"os/signal"
 	"regexp"
 	"strconv"
