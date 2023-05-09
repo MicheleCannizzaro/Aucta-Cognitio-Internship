@@ -568,28 +568,44 @@ func postForecastingReActive(w http.ResponseWriter, r *http.Request) {
 // Stats updater function
 func clusterStatsGathering() error {
 
-	cmd := exec.Command("sudo", "ceph", "osd", "dump", "--format=json", ">", "osd_dump.json") //do it also for pg_dump and osd-tree
-	err := cmd.Run()
+	f, err := os.Create("osd_dump.json")
 	if err != nil {
 		fmt.Println(err)
 	}
+	defer f.Close()
 
-	cmd1 := exec.Command("sudo", "ceph", "pg", "dump", "--format=json", ">", "pg_dump.json") //do it also for pg_dump and osd-tree
-	err1 := cmd1.Run()
+	msg, err1 := exec.Command("sudo", "ceph", "osd", "dump", "--format=json").Output() //do it also for pg_dump and osd-tree
 	if err1 != nil {
 		fmt.Println(err1)
 	}
-	cmd2 := exec.Command("sudo", "ceph", "osd", "tree", "--format=json", ">", "osd-tree.json") //do it also for pg_dump and osd-tree
-	err2 := cmd2.Run()
+
+	f.Write(msg)
+
+	f1, err2 := os.Create("osd_dump.json")
 	if err2 != nil {
 		fmt.Println(err2)
 	}
+	defer f1.Close()
 
-	//cmd1 := exec.Command("sshpass", "-p", "konoa", "scp", "cephadm@192.168.122.224:/osd_dump1.json", "/home/michele/Scrivania")
-	//err1 := cmd1.Run()
-	//if err1 != nil {
-	//	fmt.Println(err1)
-	//}
+	msg1, err3 := exec.Command("sudo", "ceph", "pg", "dump", "--format=json").Output() //do it also for pg_dump and osd-tree
+	if err3 != nil {
+		fmt.Println(err3)
+	}
+
+	f1.Write(msg1)
+
+	f2, err4 := os.Create("osd_dump.json")
+	if err4 != nil {
+		fmt.Println(err4)
+	}
+	defer f2.Close()
+
+	msg2, err5 := exec.Command("sudo", "ceph", "osd", "tree", "--format=json").Output() //do it also for pg_dump and osd-tree
+	if err5 != nil {
+		fmt.Println(err5)
+	}
+
+	f1.Write(msg2)
 
 	return nil
 }
