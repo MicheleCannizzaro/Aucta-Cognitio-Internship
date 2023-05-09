@@ -574,35 +574,35 @@ func clusterStatsGathering() error {
 	}
 	defer f.Close()
 
-	msg, err1 := exec.Command("sudo", "ceph", "osd", "dump", "--format=json").Output() //do it also for pg_dump and osd-tree
-	if err1 != nil {
-		fmt.Println(err1)
+	msg, err := exec.Command("sudo", "ceph", "osd", "dump", "--format=json").Output() //do it also for pg_dump and osd-tree
+	if err != nil {
+		fmt.Println(err)
 	}
 
 	f.Write(msg)
 
-	f1, err2 := os.Create("osd_dump.json")
-	if err2 != nil {
-		fmt.Println(err2)
+	f1, err := os.Create("pg_dump.json")
+	if err != nil {
+		fmt.Println(err)
 	}
 	defer f1.Close()
 
-	msg1, err3 := exec.Command("sudo", "ceph", "pg", "dump", "--format=json").Output() //do it also for pg_dump and osd-tree
-	if err3 != nil {
-		fmt.Println(err3)
+	msg1, err := exec.Command("sudo", "ceph", "pg", "dump", "--format=json").Output() //do it also for pg_dump and osd-tree
+	if err != nil {
+		fmt.Println(err)
 	}
 
 	f1.Write(msg1)
 
-	f2, err4 := os.Create("osd_dump.json")
-	if err4 != nil {
-		fmt.Println(err4)
+	f2, err := os.Create("osd-tree.json")
+	if err != nil {
+		fmt.Println(err)
 	}
 	defer f2.Close()
 
-	msg2, err5 := exec.Command("sudo", "ceph", "osd", "tree", "--format=json").Output() //do it also for pg_dump and osd-tree
-	if err5 != nil {
-		fmt.Println(err5)
+	msg2, err := exec.Command("sudo", "ceph", "osd", "tree", "--format=json").Output() //do it also for pg_dump and osd-tree
+	if err != nil {
+		fmt.Println(err)
 	}
 
 	f2.Write(msg2)
