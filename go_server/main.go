@@ -568,18 +568,18 @@ func postForecastingReActive(w http.ResponseWriter, r *http.Request) {
 // Stats updater function
 func clusterStatsGathering() error {
 
-	cmd := exec.Command("ceph", "osd", "dump", "--format=json", ">", "osd_dump.json") //do it also for pg_dump and osd-tree
+	cmd := exec.Command("sudo", "ceph", "osd", "dump", "--format=json", ">", "osd_dump.json") //do it also for pg_dump and osd-tree
 	err := cmd.Run()
 	if err != nil {
 		fmt.Println(err)
 	}
 
-	cmd1 := exec.Command("ceph", "pg", "dump", "--format=json", ">", "pg_dump.json") //do it also for pg_dump and osd-tree
+	cmd1 := exec.Command("sudo", "ceph", "pg", "dump", "--format=json", ">", "pg_dump.json") //do it also for pg_dump and osd-tree
 	err1 := cmd1.Run()
 	if err1 != nil {
 		fmt.Println(err1)
 	}
-	cmd2 := exec.Command("ceph", "osd", "tree", "--format=json", ">", "osd-tree.json") //do it also for pg_dump and osd-tree
+	cmd2 := exec.Command("sudo", "ceph", "osd", "tree", "--format=json", ">", "osd-tree.json") //do it also for pg_dump and osd-tree
 	err2 := cmd2.Run()
 	if err2 != nil {
 		fmt.Println(err2)
