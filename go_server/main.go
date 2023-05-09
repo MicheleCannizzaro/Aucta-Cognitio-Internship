@@ -605,7 +605,7 @@ func clusterStatsGathering() error {
 		fmt.Println(err5)
 	}
 
-	f1.Write(msg2)
+	f2.Write(msg2)
 
 	return nil
 }
