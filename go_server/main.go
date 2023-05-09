@@ -31,6 +31,7 @@ var (
 	osdTreeOutput = utility.ReadOsdTreeJson("osd-tree.json")
 	osdDumpOutput = utility.ReadOsdDumpJson("osd_dump.json")
 
+	regexPattern = "(([0-9]{1,3}.){3}[0-9]{1,3})|(osd.[0-9]{1,2})|(sv[0-9]{1,2})|([a-zA-Z0-9-]*-site)|([a-zA-Z0-9-]*-region)|([a-zA-Z0-9-]*-zone)|([a-zA-Z0-9-]*-rack)|([a-zA-Z0-9]*-[a-zA-Z0-9]*)"
 	//router declaration
 	router *mux.Router
 
@@ -107,12 +108,11 @@ func (f *RpcServer) GiveFaults(args *Args, reply *RpcResponseStruct) error {
 	fmt.Println("RPC Server: GiveFaults requested")
 
 	//update pgDumpOutput, osdTreeOutput and osdDumpOutput
-	// - must update dumps jsons
-	clusterStatsGathering() //<-LOOK
+	clusterStatsGathering()
 
 	for _, bucket := range args.Faults {
 		// Check over the acquired inputs
-		faultsRegex, err := regexp.Compile("(([0-9]{1,3}.){3}[0-9]{1,3})|(osd.[0-9]{1,2})|(sv[0-9]{1,2})")
+		faultsRegex, err := regexp.Compile(regexPattern)
 		if err != nil {
 			return errors.New("error in regex compile")
 		}
@@ -125,7 +125,7 @@ func (f *RpcServer) GiveFaults(args *Args, reply *RpcResponseStruct) error {
 
 	poolDataLossProbability, err := parser.GetPoolDataLossProbability(args.Faults, pgDumpOutput, osdTreeOutput, osdDumpOutput)
 	if err != nil {
-		return errors.New("error in data loss probability calculation")
+		return errors.New("error in data loss probability calculation - check if bucket name exists")
 	}
 
 	response := FaultsProActiveResponse{
@@ -148,8 +148,7 @@ func (f *RpcServer) GiveFaultsForecasting(args *Args1, reply *RpcResponseStruct)
 	fmt.Println("RPC Server: GiveFaultsForecasting requested")
 
 	//update pgDumpOutput, osdTreeOutput and osdDumpOutput
-	// - must update dumps jsons
-	clusterStatsGathering() //<-LOOK
+	clusterStatsGathering()
 
 	osdLifetimeInfos := []structs.OsdLifetimeInfo{}
 
@@ -190,7 +189,7 @@ func (f *RpcServer) GiveFaultsForecasting(args *Args1, reply *RpcResponseStruct)
 	//pool data loss probability calculation on WarningOsdSlice
 	poolDataLossProbability, err := parser.GetPoolDataLossProbability(warningOsdSlice, pgDumpOutput, osdTreeOutput, osdDumpOutput)
 	if err != nil {
-		return errors.New("error in data loss probability calculation")
+		return errors.New("error in data loss probability calculation - check if bucket name exists")
 	}
 
 	fmt.Printf("poolDataLossProbabilityMap-> %v\n", poolDataLossProbability)
@@ -221,6 +220,7 @@ func getInfoHealth(w http.ResponseWriter, r *http.Request) {
 	b, err := json.Marshal("System-Health: true ")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest) //in case of conversion error
+		log.Fatalln("There was an error in Marshalling request /Health")
 		return
 	}
 
@@ -238,6 +238,7 @@ func postFaultsProActive(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	err := json.NewDecoder(r.Body).Decode(&faults)
+
 	if err != nil {
 		fmt.Println("Bad Request - There was an error in decoding the request body")
 
@@ -254,15 +255,16 @@ func postFaultsProActive(w http.ResponseWriter, r *http.Request) {
 
 	for _, bucket := range faults {
 		// Check over the acquired inputs
-		faultsRegex, err := regexp.Compile("(([0-9]{1,3}.){3}[0-9]{1,3})|(osd.[0-9]{1,2})|(sv[0-9]{1,2})")
+		faultsRegex, err := regexp.Compile(regexPattern)
 		if err != nil {
+			log.Fatalln("There was an error in Regex compile")
 			return
 		}
 
 		if !faultsRegex.MatchString(bucket) {
 			fmt.Println("Bad Request - Error in requested data")
 
-			response := "Error in request data"
+			response := "Error in request data no correct bucket form"
 			w.WriteHeader(http.StatusBadRequest)
 
 			err = json.NewEncoder(w).Encode(&response)
@@ -276,13 +278,13 @@ func postFaultsProActive(w http.ResponseWriter, r *http.Request) {
 
 	}
 
-	// - must update dumps jsons
+	//pg_dump, osd_dump, osd-tree
 	clusterStatsGathering()
 
 	//pool data loss probability calculation
 	poolDataLossProbability, err := parser.GetPoolDataLossProbability(faults, pgDumpOutput, osdTreeOutput, osdDumpOutput)
 	if err != nil {
-		fmt.Println("Internal Server Error - Error calculating poolDataLossProbability")
+		fmt.Println("Internal Server Error - Error calculating poolDataLossProbability  - check if bucket name exists")
 
 		response := "Error in request data"
 		w.WriteHeader(http.StatusInternalServerError)
@@ -334,8 +336,9 @@ func postForecastingProActive(w http.ResponseWriter, r *http.Request) {
 
 	for _, info := range forecasting.OsdLifetimeInfos {
 		// Check on OsdName field
-		faultsRegex, err := regexp.Compile("(([0-9]{1,3}.){3}[0-9]{1,3})|(osd.[0-9]{1,2})|(sv[0-9]{1,2})")
+		faultsRegex, err := regexp.Compile(regexPattern)
 		if err != nil {
+			log.Fatalln("There was an error in Regex compiling")
 			return
 		}
 
@@ -356,7 +359,7 @@ func postForecastingProActive(w http.ResponseWriter, r *http.Request) {
 
 	}
 
-	// - must update dump jsons	//<-LOOK
+	//pg_dump, osd_dump, osd-tree
 	clusterStatsGathering()
 
 	forecastingTime := forecasting.ForecastingTime //time given by administrator through post
@@ -368,6 +371,17 @@ func postForecastingProActive(w http.ResponseWriter, r *http.Request) {
 	//pool data loss probability calculation on WarningOsdSlice
 	poolDataLossProbability, err := parser.GetPoolDataLossProbability(warningOsdSlice, pgDumpOutput, osdTreeOutput, osdDumpOutput)
 	if err != nil {
+		fmt.Println("Internal Server Error - Error calculating poolDataLossProbability  - check if bucket name exists")
+
+		response := "Error in request data"
+		w.WriteHeader(http.StatusInternalServerError)
+
+		err = json.NewEncoder(w).Encode(&response)
+		if err != nil {
+			log.Fatalln("There was an error encoding the response")
+		}
+
+		fmt.Println("------------------------------------------")
 		return
 	}
 
@@ -411,15 +425,16 @@ func postFaultsReActive(w http.ResponseWriter, r *http.Request) {
 
 	for _, bucket := range faults {
 		// Check over the acquired inputs
-		faultsRegex, err := regexp.Compile("(([0-9]{1,3}.){3}[0-9]{1,3})|(osd.[0-9]{1,2})|(sv[0-9]{1,2})")
+		faultsRegex, err := regexp.Compile("(([0-9]{1,3}.){3}[0-9]{1,3})|(osd.[0-9]{1,2})|(sv[0-9]{1,2})|([a-zA-Z0-9-]*-site)|([a-zA-Z0-9-]*-region)|([a-zA-Z0-9-]*-zone)|([a-zA-Z0-9-]*-rack)|([a-zA-Z0-9]*-[a-zA-Z0-9]*)")
 		if err != nil {
+			log.Fatalln("There was an error in Regex compile")
 			return
 		}
 
 		if !faultsRegex.MatchString(bucket) {
 			fmt.Println("Bad Request - Error in requested data")
 
-			response := "Error in request data"
+			response := "Error in request data no correct bucket form"
 			w.WriteHeader(http.StatusBadRequest)
 
 			err = json.NewEncoder(w).Encode(&response)
@@ -433,13 +448,13 @@ func postFaultsReActive(w http.ResponseWriter, r *http.Request) {
 
 	}
 
-	// - must update dumps jsons
-	clusterStatsGathering() //<-LOOK
+	//pg_dump, osd_dump, osd-tree
+	clusterStatsGathering()
 
 	//pool data loss probability calculation
 	poolDataLossProbability, err := parser.GetPoolDataLossProbability(faults, pgDumpOutput, osdTreeOutput, osdDumpOutput)
 	if err != nil {
-		fmt.Println("Internal Server Error - Error calculating poolDataLossProbability")
+		fmt.Println("Internal Server Error - Error calculating poolDataLossProbability - check if bucket name exists")
 
 		response := "Error in request data"
 		w.WriteHeader(http.StatusInternalServerError)
@@ -492,8 +507,9 @@ func postForecastingReActive(w http.ResponseWriter, r *http.Request) {
 
 	for _, info := range osdLifetimeInfos {
 		// Check on OsdName field
-		faultsRegex, err := regexp.Compile("(([0-9]{1,3}.){3}[0-9]{1,3})|(osd.[0-9]{1,2})|(sv[0-9]{1,2})")
+		faultsRegex, err := regexp.Compile(regexPattern)
 		if err != nil {
+			log.Fatalln("There was an error in Regex compiling")
 			return
 		}
 
@@ -514,8 +530,8 @@ func postForecastingReActive(w http.ResponseWriter, r *http.Request) {
 
 	}
 
-	// - must update dumps jsons
-	clusterStatsGathering() //<- LOOK
+	//pg_dump, osd_dump, osd-tree
+	clusterStatsGathering()
 
 	progressiveWeekDays := []int{7, 14, 21, 28}
 
@@ -530,6 +546,17 @@ func postForecastingReActive(w http.ResponseWriter, r *http.Request) {
 		//pool data loss probability calculation on WarningOsdSlice
 		poolDataLossProbability, err := parser.GetPoolDataLossProbability(warningOsdSlice, pgDumpOutput, osdTreeOutput, osdDumpOutput)
 		if err != nil {
+			fmt.Println("Internal Server Error - Error calculating poolDataLossProbability - check if bucket name exists")
+
+			response := "Error in request data"
+			w.WriteHeader(http.StatusInternalServerError)
+
+			err = json.NewEncoder(w).Encode(&response)
+			if err != nil {
+				log.Fatalln("There was an error encoding the response")
+			}
+
+			fmt.Println("------------------------------------------")
 			return
 		}
 
@@ -570,39 +597,45 @@ func clusterStatsGathering() error {
 
 	f, err := os.Create("osd_dump.json")
 	if err != nil {
-		fmt.Println(err)
+		//fmt.Println(err)
+		log.Fatal("Error in osd_dump.json creation", err)
 	}
 	defer f.Close()
 
-	msg, err := exec.Command("sudo", "ceph", "osd", "dump", "--format=json").Output() //do it also for pg_dump and osd-tree
+	msg, err := exec.Command("sudo", "ceph", "osd", "dump", "--format=json").Output()
 	if err != nil {
-		fmt.Println(err)
+		//fmt.Println(err)
+		log.Fatal("Error in executing \"osd dump --forma=json\" command", err)
 	}
 
 	f.Write(msg)
 
 	f1, err := os.Create("pg_dump.json")
 	if err != nil {
-		fmt.Println(err)
+		//fmt.Println(err)
+		log.Fatal("Error in pg_dump.json creation", err)
 	}
 	defer f1.Close()
 
-	msg1, err := exec.Command("sudo", "ceph", "pg", "dump", "--format=json").Output() //do it also for pg_dump and osd-tree
+	msg1, err := exec.Command("sudo", "ceph", "pg", "dump", "--format=json").Output()
 	if err != nil {
-		fmt.Println(err)
+		//fmt.Println(err)
+		log.Fatal("Error in executing \"pg dump --format=json\" command", err)
 	}
 
 	f1.Write(msg1)
 
 	f2, err := os.Create("osd-tree.json")
 	if err != nil {
-		fmt.Println(err)
+		//fmt.Println(err)
+		log.Fatal("Error in osd_tree.json creation", err)
 	}
 	defer f2.Close()
 
-	msg2, err := exec.Command("sudo", "ceph", "osd", "tree", "--format=json").Output() //do it also for pg_dump and osd-tree
+	msg2, err := exec.Command("sudo", "ceph", "osd", "tree", "--format=json").Output()
 	if err != nil {
-		fmt.Println(err)
+		//fmt.Println(err)
+		log.Fatal("Error in executing \"osd tree --format=json\" command", err)
 	}
 
 	f2.Write(msg2)

@@ -4,12 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go/structs"
 	s "github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go/structs"
 	utility "github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go/tools"
 )
@@ -430,11 +430,15 @@ func GetPgsWithHighProbabilityOfLosingData(pgNumberOfAffectedReplicaMap map[stri
 }
 
 // important
-func GetPgsWithZeroOrOneRemainingReplica(faultBucketOrRouter []string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) ([]string, []string) {
+func GetPgsWithZeroOrOneRemainingReplica(faultBucketOrRouter []string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) ([]string, []string, error) {
 	pgsOneReplicaSlice := []string{}
 	pgsZeroReplicaSlice := []string{}
 
-	incrementalPgAffectedReplicaMap := IncrementalRiskCalculator(faultBucketOrRouter, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+	incrementalPgAffectedReplicaMap, err := IncrementalRiskCalculator(faultBucketOrRouter, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+	if err != nil {
+		fmt.Println("GetPgsWithZeroOrOneRemainingReplica: Error in IncrementalRiskCalculator")
+		return nil, nil, err
+	}
 
 	for pg, numPgAffectedReplicas := range incrementalPgAffectedReplicaMap {
 		numPgTotalReplicas := int(GetPgTotalReplicas(pg, osdDumpOutput))
@@ -452,7 +456,7 @@ func GetPgsWithZeroOrOneRemainingReplica(faultBucketOrRouter []string, pgDumpOut
 		}
 	}
 
-	return pgsZeroReplicaSlice, pgsOneReplicaSlice
+	return pgsZeroReplicaSlice, pgsOneReplicaSlice, nil
 }
 
 // important
@@ -470,7 +474,11 @@ func GetPoolDataLossProbability(faultBucketOrRouter []string, pgDumpOutput s.PgD
 
 	//extract Pool from pgsZeroOrOneReplicaMap
 	poolAffectedPgsNumberMap := make(map[string]int)
-	pgsZeroReplicaSlice, pgsOneReplicaSlice := GetPgsWithZeroOrOneRemainingReplica(faultBucketOrRouter, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+	pgsZeroReplicaSlice, pgsOneReplicaSlice, err := GetPgsWithZeroOrOneRemainingReplica(faultBucketOrRouter, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+	if err != nil {
+		fmt.Println("GetPoolDataLossProbability: Error in GetPgsWithZeroOrOneRemainingReplica")
+		return nil, err
+	}
 	zeroReplicaPoolSlice := ExtractPoolsFromPgSlice(pgsZeroReplicaSlice)
 
 	for _, pg := range pgsOneReplicaSlice {
@@ -962,41 +970,63 @@ func GetPublicAddressOsdsMap(osdDumpOutput s.OsdDumpOutputStruct) map[string][]s
 
 // -----------------------OSD PG POOL (HOST) MAPPING FUNCTIONS--------------------------
 // important
-func RiskCalculator(faultBucketOrRouter string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) []int {
+func RiskCalculator(faultBucketOrRouter string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) ([]int, error) {
 	var affectedOsds []string
 
 	if faultBucketOrRouter == "" {
+
 		affectedOsds = []string{}
+
 	} else {
 		addressRegex, _ := regexp.Compile("([0-9]{1,3}.){3}[0-9]{1,3}")
 
 		if addressRegex.MatchString(faultBucketOrRouter) { //if name is router (address)
+
 			publicAddressOsdsMap := GetPublicAddressOsdsMap(osdDumpOutput)
 			affectedOsds = publicAddressOsdsMap[faultBucketOrRouter]
+
 		} else { //if name is bucket
+
 			faultBucket := GetNode(faultBucketOrRouter, osdTreeOutput)
 
 			if faultBucket.Type == "osd" { //if bucket is osd
+
 				affectedOsds = append(affectedOsds, faultBucketOrRouter)
+
 			} else { //if bucket is one in the hierarchy from host to root
-				bucketDistributionMap := GetDistributionMap(faultBucket.Type, pgDumpOutput, osdTreeOutput)
-				affectedOsds = bucketDistributionMap[faultBucketOrRouter].Osd.([]string)
+
+				if reflect.DeepEqual(faultBucket, s.NodeStruct{}) {
+
+					fmt.Println("RiskCalculator: error no bucket with this name ")
+					err := errors.New("error no bucket with this name")
+
+					return nil, err
+
+				} else {
+
+					bucketDistributionMap := GetDistributionMap(faultBucket.Type, pgDumpOutput, osdTreeOutput)
+					affectedOsds = bucketDistributionMap[faultBucketOrRouter].Osd.([]string)
+				}
 			}
 		}
 	}
 
 	affectedOsdIds := GetOsdIdFromOsdNames(affectedOsds)
 
-	return affectedOsdIds
+	return affectedOsdIds, nil
 }
 
 // important
-func IncrementalRiskCalculator(faultBucketOrRouter []string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) map[string]int {
+func IncrementalRiskCalculator(faultBucketOrRouter []string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) (map[string]int, error) {
 	totalNumberOfAffectedReplicaMap := make(map[string]int)
 	totalAffectedOsdIds := []int{}
 
 	for _, faultBucketOrRouterName := range faultBucketOrRouter {
-		affectedOsdIds := RiskCalculator(faultBucketOrRouterName, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+		affectedOsdIds, err := RiskCalculator(faultBucketOrRouterName, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+		if err != nil {
+			fmt.Println("IncrementalRiskCalculator: Error in RiskCalculator")
+			return nil, err
+		}
 		totalAffectedOsdIds = append(totalAffectedOsdIds, affectedOsdIds...)
 	}
 
@@ -1014,7 +1044,7 @@ func IncrementalRiskCalculator(faultBucketOrRouter []string, pgDumpOutput s.PgDu
 		}
 	}
 
-	return totalNumberOfAffectedReplicaMap
+	return totalNumberOfAffectedReplicaMap, nil
 }
 
 // -----------------------RISK FAILURE FORECASTING FUNCTION----------------------------
@@ -1047,7 +1077,7 @@ func GetOsdFaultTimeForecasting(osdInitiationDate time.Time, currentOsdLifeTime 
 }
 
 // important
-func RiskFailureForecasting(osdLifetimeInfos []structs.OsdLifetimeInfo, givenTime time.Time) (osdLifeForecastingMap map[string]float64, warningOsdSlice []string) {
+func RiskFailureForecasting(osdLifetimeInfos []s.OsdLifetimeInfo, givenTime time.Time) (osdLifeForecastingMap map[string]float64, warningOsdSlice []string) {
 
 	currentTime := time.Now().UTC()
 	timeHaed := givenTime.Sub(currentTime)
