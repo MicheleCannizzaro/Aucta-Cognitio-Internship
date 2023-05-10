@@ -32,6 +32,7 @@ var (
 	osdDumpOutput = utility.ReadOsdDumpJson("osd_dump.json")
 
 	regexPattern = "(([0-9]{1,3}.){3}[0-9]{1,3})|(osd.[0-9]{1,2})|(sv[0-9]{1,2})|([a-zA-Z0-9-]*-site)|([a-zA-Z0-9-]*-region)|([a-zA-Z0-9-]*-zone)|([a-zA-Z0-9-]*-rack)|([a-zA-Z0-9]*-[a-zA-Z0-9]*)"
+
 	//router declaration
 	router *mux.Router
 
@@ -475,7 +476,9 @@ func postFaultsReActive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	err = json.NewEncoder(w).Encode(&faults)
+
+	//err = json.NewEncoder(w).Encode(&faults)
+	err = json.NewEncoder(w).Encode("PoolDataLossProbability metric sent to Prometheus endpoint")
 	if err != nil {
 		log.Fatalln("There was an error encoding the initialized struct")
 	}
@@ -584,7 +587,9 @@ func postForecastingReActive(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusOK)
-	err = json.NewEncoder(w).Encode(&osdLifetimeInfos)
+
+	//err = json.NewEncoder(w).Encode(&osdLifetimeInfos)
+	err = json.NewEncoder(w).Encode("Metrics '(one/two/three/four)WeeksDataLossForecasting' sent to Prometheus endpoint")
 	if err != nil {
 		log.Fatalln("There was an error encoding the initialized struct")
 	}

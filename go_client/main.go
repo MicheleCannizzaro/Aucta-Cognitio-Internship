@@ -102,28 +102,24 @@ func main() {
 			log.Fatal("Error in Forecasting time layout, the correct layout is: \"2006-01-02T15:04:05.000Z\"\n", err)
 		}
 
+		//---read osds infos fake data from json---
+
+		//open file
+		osds_infos_fake_f, err := os.Open("osds_infos_fake_data.json")
+		if err != nil {
+			fmt.Println(err)
+		}
+
+		defer osds_infos_fake_f.Close()
+
 		//fake data filling
 		osdLiftimeInfo := []map[string]string{}
-		m1 := map[string]string{ //to fix - (read from a file)
-			"osd_name":             "osd.1",
-			"current_osd_lifetime": "30.0",
-			"initiation_date":      "2018-10-14T02:53:00.000Z",
-		}
-		osdLiftimeInfo = append(osdLiftimeInfo, m1)
 
-		m2 := map[string]string{
-			"osd_name":             "osd.2",
-			"current_osd_lifetime": "80.0",
-			"initiation_date":      "2020-10-14T02:53:00.000Z",
+		//read from json file and fill the map
+		err = json.NewDecoder(osds_infos_fake_f).Decode(&osdLiftimeInfo)
+		if err != nil {
+			fmt.Println(err)
 		}
-		osdLiftimeInfo = append(osdLiftimeInfo, m2)
-
-		m3 := map[string]string{
-			"osd_name":             "osd.3",
-			"current_osd_lifetime": "69.0",
-			"initiation_date":      "2023-02-14T02:53:00.000Z",
-		}
-		osdLiftimeInfo = append(osdLiftimeInfo, m3)
 
 		args := Args1{
 			ForecastingTime:  givenForecastingTime,

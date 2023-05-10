@@ -1,0 +1,12 @@
+[
+	{
+        "osd_name":"osd.1",
+        "current_osd_lifetime":60.0,
+        "initiation_date":"2019-10-14T02:53:00.000Z"
+        },
+        {
+        "osd_name":"osd.2",
+        "current_osd_lifetime":81.0,
+        "initiation_date":"2020-10-14T02:53:00.000Z"
+        }
+ ]
