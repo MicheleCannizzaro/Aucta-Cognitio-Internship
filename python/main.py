@@ -20,7 +20,6 @@ def pool_data_loss_probability():
             
 
         osd_in =requests.get(prometheus_url + '/api/v1/query', params={'query': 'ceph_osd_in'}).json()  #returns a dictionary
-        osd_in = json.dumps(osd_in) #return a well formed json
         
         #parsing dell'output di requests in json 
         osds_in_prometheus = []
@@ -94,8 +93,11 @@ def pool_data_loss_probability():
                     osds_out=set()                       
                     osds_out=list(osds_out)
         
-            print(f"osds_dump_in-> {len(osds_dump_in)} osds_in_prometheus-> {len(osds_in_prometheus)} OUT->{len(osds_out)}")
-            print("------------------------------------------")
+                print(f"osds_dump_in-> {len(osds_dump_in)} osds_in_prometheus-> {len(osds_in_prometheus)} OUT->{len(osds_out)}")
+                print("------------------------------------------")
+            
+            else:
+                logging.warning("No differences between Dump and Prometheus")
         
         else:
             logging.warning("osd_dump.json not found")
@@ -107,13 +109,17 @@ def pool_data_loss_probability():
 def pool_data_loss_forecasting():
     url = 'http://localhost:8081/dataloss-prob/component/forecasting'
     
-    #lack of a way to update osd_lifetime info...
-    with open ('osds_infos_fake_data.json') as f:
-        osd_info_forecasting = json.load(f)
+    try:
+        #lack of a way to update osd_lifetime info...
+        with open ('osds_infos_fake_data.json') as f:
+            osd_info_forecasting = json.load(f)
 
-    response = requests.post(url, json= osd_info_forecasting)
-    print(response.text)
-    print("------------------------------------------")
+        response = requests.post(url, json= osd_info_forecasting)
+        print(response.text)
+        print("------------------------------------------")
+
+    except (requests.exceptions.JSONDecodeError,UnboundLocalError, json.decoder.JSONDecodeError, TypeError) as ex:
+         logging.critical("Error in making request "+str(ex)+"\n") 
 
 def md5_checker(osd_dump_md5):
 
