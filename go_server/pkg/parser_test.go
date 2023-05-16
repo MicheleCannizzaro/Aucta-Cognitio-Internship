@@ -3,7 +3,7 @@ package pkg
 import (
 	"testing"
 
-	utility "github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go/tools"
+	utility "github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go_server/tools"
 )
 
 func TestGetPgOsdMap(t *testing.T) {

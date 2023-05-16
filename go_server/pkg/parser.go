@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	s "github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go/structs"
-	utility "github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go/tools"
+	s "github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go_server/structs"
+	utility "github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go_server/tools"
 )
 
 // ----------------------------STRUCTS----------------------------

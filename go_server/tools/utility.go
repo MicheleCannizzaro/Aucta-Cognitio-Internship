@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	s "github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go/structs"
+	s "github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go_server/structs"
 )
 
 func ReadPgDumpJson(jsonFileName string) s.PgDumpOutputStruct {

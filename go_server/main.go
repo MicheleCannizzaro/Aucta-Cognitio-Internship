@@ -17,9 +17,9 @@ import (
 	"syscall"
 	"time"
 
-	parser "github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go/pkg"
-	"github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go/structs"
-	utility "github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go/tools"
+	parser "github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go_server/pkg"
+	"github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go_server/structs"
+	utility "github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go_server/tools"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
