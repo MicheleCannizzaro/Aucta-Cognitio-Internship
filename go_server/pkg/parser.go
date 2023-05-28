@@ -21,7 +21,6 @@ type OsdPoolTuple struct {
 
 // ----------------INFORMATIONS GATHERING FUNCTIONS (pg dump)----------------
 func GetPgs(pgDumpOutput s.PgDumpOutputStruct) []string {
-	//defer utility.Duration(utility.Track("getPgIds"))
 
 	pgStats := pgDumpOutput.PgMap.PgStats
 	pgSlice := []string{}
@@ -34,7 +33,6 @@ func GetPgs(pgDumpOutput s.PgDumpOutputStruct) []string {
 }
 
 func GetPools(pgDumpOutput s.PgDumpOutputStruct) []string {
-	//defer utility.Duration(utility.Track("getPools"))
 
 	pgSlice := GetPgs(pgDumpOutput)
 	poolSlice := []string{}
@@ -45,13 +43,12 @@ func GetPools(pgDumpOutput s.PgDumpOutputStruct) []string {
 		poolSlice = append(poolSlice, poolId)
 	}
 
-	poolSlice = utility.RemoveDuplicateStr(poolSlice)
+	poolSlice = utility.RmvDuplStr(poolSlice)
 
 	return poolSlice
 }
 
 func GetOsds(pgDumpOutput s.PgDumpOutputStruct) []int {
-	//defer utility.Duration(utility.Track("getOsds"))
 
 	osdPgMap := GetOsdPgMap(pgDumpOutput)
 	osds := []int{}
@@ -64,7 +61,6 @@ func GetOsds(pgDumpOutput s.PgDumpOutputStruct) []int {
 }
 
 func GetTotalNumberOfPgs(osdPgNumberMap map[int]int) int {
-	//defer utility.Duration(utility.Track("getTotalNumberOfPgs"))
 
 	totalPgs := 0
 
@@ -76,7 +72,6 @@ func GetTotalNumberOfPgs(osdPgNumberMap map[int]int) int {
 }
 
 func GetOsdsContainingPool(pool string, pgDumpOutput s.PgDumpOutputStruct) []int {
-	//defer utility.Duration(utility.Track("getOsdsContainingPool"))
 
 	osdPoolPgMap := GetOsdPoolPgMap(pgDumpOutput)
 
@@ -93,7 +88,6 @@ func GetOsdsContainingPool(pool string, pgDumpOutput s.PgDumpOutputStruct) []int
 }
 
 func GetOsdsContainingPg(givenPg string, pgDumpOutput s.PgDumpOutputStruct) []int {
-	//defer utility.Duration(utility.Track("getOsdsContainingPg"))
 
 	osdPoolPgMap := GetOsdPoolPgMap(pgDumpOutput)
 
@@ -111,7 +105,6 @@ func GetOsdsContainingPg(givenPg string, pgDumpOutput s.PgDumpOutputStruct) []in
 }
 
 func GetAllPgInAllOsds(pgDumpOutput s.PgDumpOutputStruct) []string {
-	//defer utility.Duration(utility.Track("getAllPgInAllOsds"))
 
 	osdPgMap := GetOsdPgMap(pgDumpOutput)
 
@@ -133,7 +126,7 @@ func ExtractPoolsFromPgSlice(pgSlice []string) []string {
 		poolId := strings.Split(pg, ".")[0]
 		poolSlice = append(poolSlice, poolId)
 	}
-	return utility.RemoveDuplicateStr(poolSlice)
+	return utility.RmvDuplStr(poolSlice)
 }
 
 func ExtractOsdsFromPoolSlice(poolSlice []string, pgDumpOutput s.PgDumpOutputStruct) []int {
@@ -195,7 +188,7 @@ func GetNumberOfAssociatedPgsPerOsdMap(osdPgMap map[int][]string) map[int]int {
 }
 
 func GetOsdPoolPgMap(pgDumpOutput s.PgDumpOutputStruct) map[OsdPoolTuple][]string {
-	defer utility.Duration(utility.Track("getOsdPoolPgMap"))
+	//defer utility.Duration(utility.Track("getOsdPoolPgMap"))
 
 	osdPgMap := GetOsdPgMap(pgDumpOutput)
 	osdPoolPgMap := make(map[OsdPoolTuple][]string)
@@ -284,6 +277,7 @@ func GetPoolLostPgMap(faultOsdSlice []int, pgDumpOutput s.PgDumpOutputStruct, os
 
 // ----------------OSDs FAULT CONSEQUENCES DEFINITION FUNCTIONS------------------
 
+// important
 func GetAffectedPools(faultOsd int, pgDumpOutput s.PgDumpOutputStruct) []string {
 	//defer utility.Duration(utility.Track("getAffectedPools"))
 
@@ -297,9 +291,10 @@ func GetAffectedPools(faultOsd int, pgDumpOutput s.PgDumpOutputStruct) []string 
 		affectedPoolSlice = append(affectedPoolSlice, poolId)
 	}
 
-	return utility.RemoveDuplicateStr(affectedPoolSlice)
+	return utility.RmvDuplStr(affectedPoolSlice)
 }
 
+// important
 func GetAffectedPgs(faultOsd int, pgDumpOutput s.PgDumpOutputStruct) []string {
 	//defer utility.Duration(utility.Track("getAffectedPgs"))
 
@@ -333,8 +328,7 @@ func PercentageCalculationAffectedReplicasPg(faultOsd int, givenPg string, pgDum
 
 	numAffectedReplicaPgItem := getNumAffectedReplicasPgItem(faultOsd, givenPg, pgDumpOutput)
 
-	//pgTotalReplicas := GetPgTotalReplicas(givenPg, pgDumpOutput)
-	pgTotalReplicas := GetPgTotalReplicas(givenPg, osdDumpOutput)
+	pgTotalReplicas, _, _ := GetOsdNumberForPg(givenPg, osdDumpOutput)
 
 	percentage := (numAffectedReplicaPgItem / pgTotalReplicas) * 100
 
@@ -362,6 +356,7 @@ func WarningCheck(percentage float64, faultOsd int, givenPg string, pgDumpOutput
 	fmt.Printf("Warning: check these other OSDs and percentages for %s ->%v\n", givenPg, warningOsdSlice)
 }
 
+// important
 func GetTotalAffectedPgsAndPools(faultOsdSlice []int, pgDumpOutput s.PgDumpOutputStruct) ([]string, []string) {
 	//defer utility.Duration(utility.Track("getTotalAffectedPgsAndPools"))
 
@@ -376,7 +371,7 @@ func GetTotalAffectedPgsAndPools(faultOsdSlice []int, pgDumpOutput s.PgDumpOutpu
 		totalAffectedPools = append(totalAffectedPools, affectedPools...)
 	}
 
-	totalAffectedPools = utility.RemoveDuplicateStr(totalAffectedPools)
+	totalAffectedPools = utility.RmvDuplStr(totalAffectedPools)
 
 	return totalAffectedPgs, totalAffectedPools
 }
@@ -404,8 +399,8 @@ func GetPgsWithHighProbabilityOfLosingData(pgNumberOfAffectedReplicaMap map[stri
 	//defer utility.Duration(utility.Track("getPgsWithHighProbabilityOfLosingData"))
 
 	for pg, numLostReplicas := range pgNumberOfAffectedReplicaMap {
-		//pgTotalReplicas := GetPgTotalReplicas(pg, pgDumpOutput)
-		pgTotalReplicas := GetPgTotalReplicas(pg, osdDumpOutput)
+
+		pgTotalReplicas, _, _ := GetOsdNumberForPg(pg, osdDumpOutput)
 		percetageLostReplicas := (float64(numLostReplicas) / pgTotalReplicas) * 100
 
 		if percetageLostReplicas > 0.0 && percetageLostReplicas < 50.0 {
@@ -424,39 +419,51 @@ func GetPgsWithHighProbabilityOfLosingData(pgNumberOfAffectedReplicaMap map[stri
 		allCompromisedPgs = append(allCompromisedPgs, ele...)
 	}
 
-	inHealthPgs = utility.Difference(utility.RemoveDuplicateStr(GetAllPgInAllOsds(pgDumpOutput)), allCompromisedPgs)
+	inHealthPgs = utility.Difference(utility.RmvDuplStr(GetAllPgInAllOsds(pgDumpOutput)), allCompromisedPgs)
 
 	return inHealthPgs, goodPgs, warningPgs, lostPgs
 }
 
 // important
-func GetPgsWithZeroOrOneRemainingReplica(faultBucketOrRouter []string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) ([]string, []string, error) {
-	pgsOneReplicaSlice := []string{}
-	pgsZeroReplicaSlice := []string{}
+func GetLostAndWarningPgs(faultBucketOrRouter []string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) ([]string, []string, error) {
+	warningPgsSlice := []string{}
+	lostPgsSlice := []string{}
 
 	incrementalPgAffectedReplicaMap, err := IncrementalRiskCalculator(faultBucketOrRouter, pgDumpOutput, osdTreeOutput, osdDumpOutput)
 	if err != nil {
-		fmt.Println("GetPgsWithZeroOrOneRemainingReplica: Error in IncrementalRiskCalculator")
+		fmt.Println("GetLostAndWarningPgs: Error in IncrementalRiskCalculator")
 		return nil, nil, err
 	}
 
 	for pg, numPgAffectedReplicas := range incrementalPgAffectedReplicaMap {
-		numPgTotalReplicas := int(GetPgTotalReplicas(pg, osdDumpOutput))
+		numPgTotalReplicas, k, m := GetOsdNumberForPg(pg, osdDumpOutput) //Equal to Pool Size, in other words is the number of OSDs in which is stored the PG
 
-		numPgRemainingReplicas := numPgTotalReplicas - numPgAffectedReplicas
+		numPgRemainingReplicas := int(numPgTotalReplicas) - numPgAffectedReplicas
 
-		if numPgRemainingReplicas <= 1 {
-			if numPgRemainingReplicas == 0 {
-				pgsZeroReplicaSlice = append(pgsZeroReplicaSlice, pg)
+		if k == 0 && m == 0 { //replicated pool
+			if numPgRemainingReplicas <= 1 {
+				if numPgRemainingReplicas == 0 {
+					lostPgsSlice = append(lostPgsSlice, pg)
+				}
+
+				if numPgRemainingReplicas == 1 {
+					warningPgsSlice = append(warningPgsSlice, pg)
+				}
 			}
+		} else { //erasure coded pool
+			if numPgRemainingReplicas <= k {
+				if numPgRemainingReplicas < k {
+					lostPgsSlice = append(lostPgsSlice, pg)
+				}
 
-			if numPgRemainingReplicas == 1 {
-				pgsOneReplicaSlice = append(pgsOneReplicaSlice, pg)
+				if numPgRemainingReplicas == k {
+					warningPgsSlice = append(warningPgsSlice, pg)
+				}
 			}
 		}
 	}
 
-	return pgsZeroReplicaSlice, pgsOneReplicaSlice, nil
+	return lostPgsSlice, warningPgsSlice, nil
 }
 
 // important
@@ -464,7 +471,7 @@ func GetPoolDataLossProbability(faultBucketOrRouter []string, pgDumpOutput s.PgD
 
 	poolDataLossProbabilityMap := make(map[string]float64)
 
-	//get the number of Pg inside each pool
+	//get the number of PGs inside each pool
 	poolPgNumberMap, err := GetPoolPgNumberMap(pgDumpOutput, osdDumpOutput)
 
 	if err != nil {
@@ -472,16 +479,16 @@ func GetPoolDataLossProbability(faultBucketOrRouter []string, pgDumpOutput s.PgD
 		return poolDataLossProbabilityMap, error
 	}
 
-	//extract Pool from pgsZeroOrOneReplicaMap
+	//extract Pools' values from GetLostAndWarningPgs
 	poolAffectedPgsNumberMap := make(map[string]int)
-	pgsZeroReplicaSlice, pgsOneReplicaSlice, err := GetPgsWithZeroOrOneRemainingReplica(faultBucketOrRouter, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+	lostPgsSlice, warningPgsSlice, err := GetLostAndWarningPgs(faultBucketOrRouter, pgDumpOutput, osdTreeOutput, osdDumpOutput)
 	if err != nil {
-		fmt.Println("GetPoolDataLossProbability: Error in GetPgsWithZeroOrOneRemainingReplica")
+		fmt.Println("GetPoolDataLossProbability: Error in GetLostAndWarningPgs")
 		return nil, err
 	}
-	zeroReplicaPoolSlice := ExtractPoolsFromPgSlice(pgsZeroReplicaSlice)
+	lostPgsPoolSlice := ExtractPoolsFromPgSlice(lostPgsSlice)
 
-	for _, pg := range pgsOneReplicaSlice {
+	for _, pg := range warningPgsSlice {
 		poolId := strings.Split(pg, ".")[0]
 
 		if _, isPresent := poolAffectedPgsNumberMap[poolId]; !isPresent {
@@ -495,7 +502,7 @@ func GetPoolDataLossProbability(faultBucketOrRouter []string, pgDumpOutput s.PgD
 
 	for _, pool := range pools {
 
-		if utility.StringInSlice(pool, zeroReplicaPoolSlice) {
+		if utility.StringInSlice(pool, lostPgsPoolSlice) {
 			poolAffectedPgsNumberMap[pool] = poolPgNumberMap[pool]
 			//poolAffectedPgsNumberMap[pool] = -1 * poolPgNumberMap[pool]
 			//poolAffectedPgsNumberMap[pool] = -1 * poolAffectedPgsNumberMap[pool]
@@ -900,6 +907,42 @@ func GetPool(poolId int, osdDumpOuput s.OsdDumpOutputStruct) (poolStruct s.PoolS
 }
 
 // important
+func GetErasureCodeProfileInfo(erasureCodeProfileName string, osdDumpOuput s.OsdDumpOutputStruct) (k int, m int, err error) {
+	erasureCodeProfilesStruct := osdDumpOuput.ErasureCodeProfiles
+	erasureCodeProfiles := reflect.Indirect(reflect.ValueOf(&erasureCodeProfilesStruct))
+	numProfiles := erasureCodeProfiles.NumField()
+
+	for i := 0; i < numProfiles; i++ {
+		tag, ok := erasureCodeProfiles.Type().Field(i).Tag.Lookup("json")
+		if !ok {
+			error := errors.New("something went wrong in Tag.Lookup(\"json\")")
+			return 0, 0, error
+		}
+
+		erasureCodeProfileTag := utility.ExtractTagNameFromString(tag)
+
+		if erasureCodeProfileTag == erasureCodeProfileName {
+			erasureCodeProfile := reflect.Indirect(erasureCodeProfiles).Field(i)
+			numDataChunk := erasureCodeProfile.FieldByName("K").Interface().(string)
+			numCodingChunk := erasureCodeProfile.FieldByName("M").Interface().(string)
+			k, err = strconv.Atoi(numDataChunk)
+			if err != nil {
+				error := errors.New("something went wrong in converting numDataChunk to int")
+				return 0, 0, error
+			}
+			m, err = strconv.Atoi(numCodingChunk)
+			if err != nil {
+				error := errors.New("something went wrong in converting numCodingChunk to int")
+				return 0, 0, error
+			}
+
+		}
+	}
+
+	return k, m, nil
+}
+
+// important
 func GetPoolPgNumberMap(pgDumpOutput s.PgDumpOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) (map[string]int, error) {
 	poolPgNumberMap := make(map[string]int)
 
@@ -935,7 +978,23 @@ func GetOsdIdFromOsdNames(osdNames []string) (osdIds []int) {
 	return
 }
 
-func GetPgTotalReplicas(givenPg string, osdDumpOutput s.OsdDumpOutputStruct) float64 {
+// func GetPgTotalReplicas(givenPg string, osdDumpOutput s.OsdDumpOutputStruct) float64 {
+//
+// 	stringPoolId := strings.Split(givenPg, ".")[0]
+//
+// 	poolId, err := strconv.Atoi(stringPoolId)
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
+//
+// 	pool := GetPool(poolId, osdDumpOutput)
+//
+// 	numberOfPgReplica := pool.Size
+// 	return float64(numberOfPgReplica)
+// }
+
+// important
+func GetOsdNumberForPg(givenPg string, osdDumpOutput s.OsdDumpOutputStruct) (float64, int, int) {
 
 	stringPoolId := strings.Split(givenPg, ".")[0]
 
@@ -946,8 +1005,25 @@ func GetPgTotalReplicas(givenPg string, osdDumpOutput s.OsdDumpOutputStruct) flo
 
 	pool := GetPool(poolId, osdDumpOutput)
 
-	numberOfPgReplica := pool.Size
-	return float64(numberOfPgReplica)
+	var k int //number of data chunks
+	var m int //number of coding chunks
+
+	osdNumberForPg := pool.Size
+
+	if pool.ErasureCodeProfile == "" {
+		//replicated pool
+		k = 0
+		m = 0
+	} else {
+		//erasure coded pool
+		k, m, err = GetErasureCodeProfileInfo(pool.ErasureCodeProfile, osdDumpOutput)
+
+		if err != nil {
+			return 0, 0, 0
+		}
+	}
+
+	return float64(osdNumberForPg), k, m
 }
 
 // important
@@ -1077,7 +1153,7 @@ func GetOsdFaultTimeForecasting(osdInitiationDate time.Time, currentOsdLifeTime 
 }
 
 // important
-func RiskFailureForecasting(osdLifetimeInfos []s.OsdLifetimeInfo, givenTime time.Time) (osdLifeForecastingMap map[string]float64, warningOsdSlice []string) {
+func RiskFailureForecasting(osdLifetimeInfoStructs []s.OsdLifetimeInfo, givenTime time.Time) (osdLifeForecastingMap map[string]float64, warningOsdSlice []string) {
 
 	currentTime := time.Now().UTC()
 	timeHaed := givenTime.Sub(currentTime)
@@ -1085,7 +1161,7 @@ func RiskFailureForecasting(osdLifetimeInfos []s.OsdLifetimeInfo, givenTime time
 
 	osdLifeForecastingMap = make(map[string]float64)
 
-	for _, osdLifetimeInfo := range osdLifetimeInfos {
+	for _, osdLifetimeInfo := range osdLifetimeInfoStructs {
 		meanDegradationRate := GetOsdMeanDegradationRatePerWeek(currentTime, osdLifetimeInfo.InitiationDate, osdLifetimeInfo.CurrentOsdLifetime)
 
 		osdLifeForecasting := osdLifetimeInfo.CurrentOsdLifetime + meanDegradationRate*timeHaedInWeeks

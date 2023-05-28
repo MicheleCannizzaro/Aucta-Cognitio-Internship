@@ -66,7 +66,7 @@ func main() {
 			log.Fatal("Client connection error: ", err)
 		}
 
-		// Invoke the remote function GiveFaults attached to TimeServer pointer
+		// Invoke the remote function GiveFaults
 		err = client.Call("RpcServer.GiveFaults", args, &reply)
 
 		if err != nil {
@@ -132,7 +132,7 @@ func main() {
 			log.Fatal("Client connection error: ", err)
 		}
 
-		// Invoke the remote function GiveFaultsForecasting attached to TimeServer pointer
+		// Invoke the remote function GiveFaultsForecasting
 		err = client.Call("RpcServer.GiveFaultsForecasting", args, &reply)
 		if err != nil {
 			log.Fatal("Client invocation error: ", err)

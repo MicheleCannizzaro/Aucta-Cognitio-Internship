@@ -8,6 +8,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"regexp"
 	"time"
 
 	s "github.com/MicheleCannizzaro/Aucta-Cognitio-Internship/go_server/structs"
@@ -70,7 +71,7 @@ func ReadOsdDumpJson(jsonFileName string) s.OsdDumpOutputStruct {
 	return osdStruc
 }
 
-func RemoveDuplicateStr(strSlice []string) []string {
+func RmvDuplStr(strSlice []string) []string {
 	allKeys := make(map[string]bool)
 	slice := []string{}
 
@@ -164,4 +165,11 @@ func StringInSlice(a string, list []string) bool {
 		}
 	}
 	return false
+}
+
+// works on tag like that (json:"pool3_ec_profile,omitempty") to return pool3_ec_profile
+func ExtractTagNameFromString(tag string) string {
+	tagRegex, _ := regexp.Compile("^[^,]*")
+	tagValue := tagRegex.FindStringSubmatch(tag)
+	return tagValue[0]
 }
