@@ -20,7 +20,7 @@ def pool_data_loss_probability():
 
         osd_in =requests.get(prometheus_url + '/api/v1/query', params={'query': 'ceph_osd_in'}).json()  #returns a dictionary
 
-        #parsing dell'output di requests in json 
+        #parsing dell'output di requests in json
         osds_in_prometheus = []
 
         if osd_in["status"] == "success":
@@ -36,7 +36,7 @@ def pool_data_loss_probability():
         #osds_in_prometheus = ["osd.1", "osd.2"] #fake_data
         osds_in_prometheus = set(osds_in_prometheus)
 
-        #---extracting osd_dump from cluster--- 
+        #---extracting osd_dump from cluster---
         #to understand if osd_dump is the same of before or not... and writing it only if there are differences
         output_md5_dump=os.popen('sudo ceph osd dump --format=json | md5sum').read()
 
@@ -69,10 +69,10 @@ def pool_data_loss_probability():
             #print(osds_dump_in)
             osds_dump_in=set(osds_dump_in)
 
-            #--- check if there is any difference between osds_dump_in and osd_in extracted from prometheus---
+            #--- check if there is any difference between osds_dump_in and osd_in extracted from prometheus ---
 
             if osds_dump_in != osds_in_prometheus:
-                #calculate osds_out                              
+                #calculate osds_out
                 if len(osds_dump_in)>len(osds_in_prometheus):
                     osds_out= set(osds_dump_in)-set(osds_in_prometheus) #some osd is down
                     osds_out=list(osds_out)
@@ -86,10 +86,10 @@ def pool_data_loss_probability():
                     response = requests.post(url, json= osds_out)
                     print(response.text)
 
-                else:		
+                else:
                     #osds_out= set(osds_in_prometheus)-set(osds_dump_in)
                     print("Prometheus shows more osds with status 'in' than dump")
-                    osds_out=set()                       
+                    osds_out=set()
                     osds_out=list(osds_out)
 
                 print(f"osds_dump_in-> {len(osds_dump_in)} osds_in_prometheus-> {len(osds_in_prometheus)} OUT->{len(osds_out)}")
@@ -102,7 +102,7 @@ def pool_data_loss_probability():
             logging.warning("osd_dump.json not found")
 
     except (requests.exceptions.JSONDecodeError,UnboundLocalError, json.decoder.JSONDecodeError, TypeError) as ex:
-         logging.critical("Error in making request to Prometheus metric endpoint "+str(ex)+"\n")        
+         logging.critical("Error in making request to Prometheus metric endpoint "+str(ex)+"\n")
 
 #dataloss-prob/component/forecasting
 def pool_data_loss_forecasting():
