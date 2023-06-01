@@ -510,7 +510,14 @@ func GetPoolDataLossProbability(faultBucketOrRouter []string, pgDumpOutput s.PgD
 
 		poolDatalossProbability := float64(poolAffectedPgsNumberMap[pool]) / float64(poolPgNumberMap[pool])
 
-		poolDataLossProbabilityMap[pool] = utility.RoundFloat(poolDatalossProbability, 2)
+		poolId, err := strconv.Atoi(pool)
+		if err != nil {
+			error := errors.New("something went wrong in converting poolId in string format to int")
+			return nil, error
+		}
+		poolName := GetPool(poolId, osdDumpOutput).PoolName
+
+		poolDataLossProbabilityMap[poolName] = utility.RoundFloat(poolDatalossProbability, 2)
 	}
 
 	return poolDataLossProbabilityMap, nil
@@ -904,6 +911,18 @@ func GetPool(poolId int, osdDumpOuput s.OsdDumpOutputStruct) (poolStruct s.PoolS
 	}
 
 	return
+}
+
+func GetOsdNotIn(osdDumpOutput s.OsdDumpOutputStruct) []string {
+	osdStats := osdDumpOutput.Osds
+	osdNotIn := []string{}
+
+	for _, osd := range osdStats {
+		if osd.In == 0 {
+			osdNotIn = append(osdNotIn, "osd."+strconv.Itoa(osd.Osd))
+		}
+	}
+	return osdNotIn
 }
 
 // important

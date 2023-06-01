@@ -37,115 +37,169 @@ type Args1 struct {
 }
 
 func main() {
-	commandArgs := os.Args[1:]
 
-	if commandArgs[0] == "faults" {
-		// Address to this variable will be sent to the RPC server
-		var reply RpcResponseStruct
+	if len(os.Args[1:]) == 0 {
 
-		// givenFaults := []string{"osd.1", "osd.8"}
-		givenFaults := strings.Split(commandArgs[1], ",")
+		fmt.Println("No parameter was provided: you can add \"faults\", \"forecasting\", \"current\"")
+	} else {
+		commandArgs := os.Args[1:]
 
-		for _, bucket := range givenFaults {
-			// Check over the acquired inputs
-			faultsRegex, err := regexp.Compile("(([0-9]{1,3}.){3}[0-9]{1,3})|(osd.[0-9]{1,2})|(sv[0-9]{1,2})")
+		if commandArgs[0] == "faults" {
+			// This variable will be sent to the RPC server
+			var reply RpcResponseStruct
 
-			if !faultsRegex.MatchString(bucket) {
-				log.Fatal("Error in bucket acquisition", err)
+			if len(commandArgs[1:]) > 0 {
+
+				givenFaults := strings.Split(commandArgs[1], ",")
+
+				for _, bucket := range givenFaults {
+					// Check over the acquired inputs
+					//the last element of this pattern seem to render the controls useless, having a convection on the name of the chassis and the root solves this problem, by modifying the regex
+					faultsRegex, err := regexp.Compile("(([0-9]{1,3}.){3}[0-9]{1,3})|(osd.[0-9]{1,2})|(sv[0-9]{1,2})|([a-zA-Z0-9-]*-site)|([a-zA-Z0-9-]*-region)|([a-zA-Z0-9-]*-zone)|([a-zA-Z0-9-]*-rack)|([a-zA-Z0-9]*-[a-zA-Z0-9]*)|.*")
+
+					if !faultsRegex.MatchString(bucket) {
+						log.Fatal("Error in bucket acquisition", err)
+					}
+
+				}
+
+				args := Args{
+					Faults: givenFaults,
+				}
+
+				// DialHTTP connects to an HTTP RPC server at the specified network
+				client, err := rpc.DialHTTP("tcp", "localhost:1205")
+				if err != nil {
+					log.Fatal("Client connection error: ", err)
+				}
+
+				// Invoke the remote function GiveFaults
+				err = client.Call("RpcServer.GiveFaults", args, &reply)
+
+				if err != nil {
+					log.Fatal("Client invocation error: ", err)
+				}
+
+				if !reflect.DeepEqual(reply.FaultsProActiveResponse, FaultsProActiveResponse{}) {
+
+					// Print the reply from the server
+					buffer := new(strings.Builder)
+					err = json.NewEncoder(buffer).Encode(&reply.FaultsProActiveResponse)
+
+					if err != nil {
+						log.Fatalln("There was an error decoding the reply")
+					}
+
+					log.Printf("%v", buffer.String())
+				}
+			} else {
+				fmt.Println("No Buckets or Network Addresses were provided")
 			}
-
 		}
 
-		args := Args{
-			Faults: givenFaults,
-		}
+		if commandArgs[0] == "forecasting" {
+			// This variable will be sent to the RPC server
+			var reply RpcResponseStruct
 
-		// DialHTTP connects to an HTTP RPC server at the specified network
-		client, err := rpc.DialHTTP("tcp", "localhost:1025")
-		if err != nil {
-			log.Fatal("Client connection error: ", err)
-		}
+			if len(commandArgs[1:]) > 0 {
+				givenForecastingTime := commandArgs[1]
 
-		// Invoke the remote function GiveFaults
-		err = client.Call("RpcServer.GiveFaults", args, &reply)
+				fmt.Printf("Forecasting Time Requested: %s\n", givenForecastingTime)
 
-		if err != nil {
-			log.Fatal("Client invocation error: ", err)
-		}
+				// Check over the acquired forecasting time input
+				givenFtRegex, err := regexp.Compile("([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}:[0-9]{2}:[0-9]{2}.[0-9]{3}Z)")
 
-		if !reflect.DeepEqual(reply.FaultsProActiveResponse, FaultsProActiveResponse{}) {
+				if !givenFtRegex.MatchString(givenForecastingTime) {
+					log.Fatal("Error in Forecasting time layout, the correct layout is (yyyy-MM-ddTHH:mm:ss.SSS'Z') e.g \"2006-01-02T15:04:05.000Z\"\n", err)
+				}
 
-			// Print the reply from the server
-			buffer := new(strings.Builder)
-			err = json.NewEncoder(buffer).Encode(&reply.FaultsProActiveResponse)
+				//---read osds infos fake data from json---
 
-			if err != nil {
-				log.Fatalln("There was an error decoding the reply")
+				//open file
+				osds_infos_fake_f, err := os.Open("osds_infos_fake_data.json")
+				if err != nil {
+					fmt.Println(err)
+				}
+
+				defer osds_infos_fake_f.Close()
+
+				//fake data filling
+				osdLiftimeInfo := []map[string]string{}
+
+				//read from json file and fill the map
+				err = json.NewDecoder(osds_infos_fake_f).Decode(&osdLiftimeInfo)
+				if err != nil {
+					fmt.Println(err)
+				}
+
+				args := Args1{
+					ForecastingTime:  givenForecastingTime,
+					OsdLifetimeInfos: osdLiftimeInfo,
+				}
+
+				// DialHTTP connects to an HTTP RPC server at the specified network
+				client, err := rpc.DialHTTP("tcp", "localhost:1205")
+				if err != nil {
+					log.Fatal("Client connection error: ", err)
+				}
+
+				// Invoke the remote function GiveFaultsForecasting
+				err = client.Call("RpcServer.GiveFaultsForecasting", args, &reply)
+				if err != nil {
+					log.Fatal("Client invocation error: ", err)
+				}
+
+				if !reflect.DeepEqual(reply.OsdLifitimeForecastingResponse, OsdLifitimeForecastingResponse{}) {
+					buffer := new(strings.Builder)
+					err = json.NewEncoder(buffer).Encode(&reply.OsdLifitimeForecastingResponse)
+					if err != nil {
+						log.Fatalln("There was an error decoding the reply")
+					}
+
+					log.Printf("%v", buffer.String())
+				}
+			} else {
+
+				fmt.Println("No timestamp was provided (layout:yyyy-MM-ddTHH:mm:ss.SSS'Z') e.g \"2006-01-02T15:04:05.000Z\"")
 			}
-
-			log.Printf("%v", buffer.String())
-		}
-	}
-
-	if commandArgs[0] == "forecasting" {
-		// Address to this variable will be sent to the RPC server
-		var reply RpcResponseStruct
-
-		givenForecastingTime := commandArgs[1]
-
-		fmt.Printf("Forecasting Time Requested: %s\n", givenForecastingTime)
-
-		// Check over the acquired forecasting time input
-		givenFtRegex, err := regexp.Compile("([0-9]{4}-[0-9]{2}-[0-9]{2})T([0-9]{2}:[0-9]{2}:[0-9]{2}.[0-9]{3}Z)")
-
-		if !givenFtRegex.MatchString(givenForecastingTime) {
-			log.Fatal("Error in Forecasting time layout, the correct layout is: \"2006-01-02T15:04:05.000Z\"\n", err)
 		}
 
-		//---read osds infos fake data from json---
+		if commandArgs[0] == "current" {
+			// This variable will be sent to the RPC server
+			var reply RpcResponseStruct
 
-		//open file
-		osds_infos_fake_f, err := os.Open("osds_infos_fake_data.json")
-		if err != nil {
-			fmt.Println(err)
-		}
+			if len(commandArgs[1:]) <= 0 {
+				args := Args{}
 
-		defer osds_infos_fake_f.Close()
+				// DialHTTP connects to an HTTP RPC server at the specified network
+				client, err := rpc.DialHTTP("tcp", "localhost:1205")
+				if err != nil {
+					log.Fatal("Client connection error: ", err)
+				}
 
-		//fake data filling
-		osdLiftimeInfo := []map[string]string{}
+				// Invoke the remote function GiveCurrentProbability
+				err = client.Call("RpcServer.GiveCurrentProbability", args, &reply)
 
-		//read from json file and fill the map
-		err = json.NewDecoder(osds_infos_fake_f).Decode(&osdLiftimeInfo)
-		if err != nil {
-			fmt.Println(err)
-		}
+				if err != nil {
+					log.Fatal("Client invocation error: ", err)
+				}
 
-		args := Args1{
-			ForecastingTime:  givenForecastingTime,
-			OsdLifetimeInfos: osdLiftimeInfo,
-		}
+				if !reflect.DeepEqual(reply.FaultsProActiveResponse, FaultsProActiveResponse{}) {
 
-		// DialHTTP connects to an HTTP RPC server at the specified network
-		client, err := rpc.DialHTTP("tcp", "localhost:1025")
-		if err != nil {
-			log.Fatal("Client connection error: ", err)
-		}
+					// Print the reply from the server
+					buffer := new(strings.Builder)
+					err = json.NewEncoder(buffer).Encode(&reply.FaultsProActiveResponse)
 
-		// Invoke the remote function GiveFaultsForecasting
-		err = client.Call("RpcServer.GiveFaultsForecasting", args, &reply)
-		if err != nil {
-			log.Fatal("Client invocation error: ", err)
-		}
+					if err != nil {
+						log.Fatalln("There was an error decoding the reply")
+					}
 
-		if !reflect.DeepEqual(reply.OsdLifitimeForecastingResponse, OsdLifitimeForecastingResponse{}) {
-			buffer := new(strings.Builder)
-			err = json.NewEncoder(buffer).Encode(&reply.OsdLifitimeForecastingResponse)
-			if err != nil {
-				log.Fatalln("There was an error decoding the reply")
+					log.Printf("%v", buffer.String())
+				}
+
+			} else {
+				fmt.Println("No parameters required")
 			}
-
-			log.Printf("%v", buffer.String())
 		}
 	}
 }

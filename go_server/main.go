@@ -31,7 +31,8 @@ var (
 	osdTreeOutput = utility.ReadOsdTreeJson("osd-tree.json")
 	osdDumpOutput = utility.ReadOsdDumpJson("osd_dump.json")
 
-	regexPattern = "(([0-9]{1,3}.){3}[0-9]{1,3})|(osd.[0-9]{1,2})|(sv[0-9]{1,2})|([a-zA-Z0-9-]*-site)|([a-zA-Z0-9-]*-region)|([a-zA-Z0-9-]*-zone)|([a-zA-Z0-9-]*-rack)|([a-zA-Z0-9]*-[a-zA-Z0-9]*)"
+	//the last element of this pattern seem to render the controls useless, having a convection on the name of the chassis and the root solves this problem, by modifying the regex
+	regexPattern = "(([0-9]{1,3}.){3}[0-9]{1,3})|(osd.[0-9]{1,2})|(sv[0-9]{1,2})|([a-zA-Z0-9-]*-site)|([a-zA-Z0-9-]*-region)|([a-zA-Z0-9-]*-zone)|([a-zA-Z0-9-]*-rack)|([a-zA-Z0-9]*-[a-zA-Z0-9]*|.*)"
 
 	//router declaration
 	router *mux.Router
@@ -94,7 +95,7 @@ type Args struct {
 
 type Args1 struct {
 	ForecastingTime  string
-	OsdLifetimeInfos []map[string]string //cambia
+	OsdLifetimeInfos []map[string]string
 }
 
 type RpcResponseStruct struct {
@@ -105,10 +106,39 @@ type RpcResponseStruct struct {
 type RpcServer RpcResponseStruct
 
 // --- RPC methods ---
+func (f *RpcServer) GiveCurrentProbability(args *Args, reply *RpcResponseStruct) error {
+	fmt.Println("RPC Server: GiveCurrentProbability requested")
+
+	//pg_dump, osd_dump, osd-tree update
+	clusterStatsGathering()
+
+	osdsNotIn := parser.GetOsdNotIn(osdDumpOutput)
+
+	poolDataLossProbability, err := parser.GetPoolDataLossProbability(osdsNotIn, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+	if err != nil {
+		return errors.New("error in data loss probability calculation")
+	}
+
+	response := FaultsProActiveResponse{
+		Faults:                  osdsNotIn,
+		PoolDatalossProbability: poolDataLossProbability,
+	}
+
+	res := RpcResponseStruct{
+		FaultsProActiveResponse:        response,
+		OsdLifitimeForecastingResponse: OsdLifitimeForecastingResponse{}, //zero value
+	}
+
+	fmt.Println("------------------------------------------")
+
+	*reply = res
+	return nil
+}
+
 func (f *RpcServer) GiveFaults(args *Args, reply *RpcResponseStruct) error {
 	fmt.Println("RPC Server: GiveFaults requested")
 
-	//update pgDumpOutput, osdTreeOutput and osdDumpOutput
+	//pg_dump, osd_dump, osd-tree update
 	clusterStatsGathering()
 
 	for _, bucket := range args.Faults {
@@ -148,7 +178,7 @@ func (f *RpcServer) GiveFaults(args *Args, reply *RpcResponseStruct) error {
 func (f *RpcServer) GiveFaultsForecasting(args *Args1, reply *RpcResponseStruct) error {
 	fmt.Println("RPC Server: GiveFaultsForecasting requested")
 
-	//update pgDumpOutput, osdTreeOutput and osdDumpOutput
+	//pg_dump, osd_dump, osd-tree update
 	clusterStatsGathering()
 
 	osdLifetimeInfos := []structs.OsdLifetimeInfo{}
@@ -279,7 +309,7 @@ func postFaultsProActive(w http.ResponseWriter, r *http.Request) {
 
 	}
 
-	//pg_dump, osd_dump, osd-tree
+	//pg_dump, osd_dump, osd-tree update
 	clusterStatsGathering()
 
 	//pool data loss probability calculation
@@ -360,7 +390,7 @@ func postForecastingProActive(w http.ResponseWriter, r *http.Request) {
 
 	}
 
-	//pg_dump, osd_dump, osd-tree
+	//pg_dump, osd_dump, osd-tree update
 	clusterStatsGathering()
 
 	forecastingTime := forecasting.ForecastingTime //time given by administrator through post
@@ -397,6 +427,55 @@ func postForecastingProActive(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Fatalln("There was an error encoding the initialized struct")
 	}
+
+	fmt.Println("------------------------------------------")
+}
+
+// endpoint: /dataloss-prob/current
+func getCurrentProbability(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("REST Server: Get request arrived\n endpoint: /dataloss-prob/current")
+
+	w.Header().Set("Content-Type", "application/json")
+
+	//pg_dump, osd_dump, osd-tree update
+	clusterStatsGathering()
+
+	osdsNotIn := parser.GetOsdNotIn(osdDumpOutput)
+
+	//pool data loss probability calculation
+	poolDataLossProbability, err := parser.GetPoolDataLossProbability(osdsNotIn, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+	if err != nil {
+		fmt.Println("Internal Server Error - Error calculating poolDataLossProbability")
+
+		response := "Error in request data"
+		w.WriteHeader(http.StatusInternalServerError)
+
+		err = json.NewEncoder(w).Encode(&response)
+		if err != nil {
+			log.Fatalln("There was an error encoding the response")
+		}
+
+		fmt.Println("------------------------------------------")
+		return
+	}
+
+	//Prometheus metric handling/triggering
+	pools := parser.GetPools(pgDumpOutput)
+	for _, pool := range pools {
+		datalossProbability.With(prometheus.Labels{"pool": "Pool: " + pool}).Set(poolDataLossProbability[pool])
+	}
+	fmt.Println("PoolDataLossProbability metric sent to Prometheus endpoint")
+
+	b, err := json.Marshal(poolDataLossProbability)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest) //in case of conversion error
+		log.Fatalln("There was an error in Marshalling request /dataloss-prob/component/faults/current")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(b) //write the data to the connection
 
 	fmt.Println("------------------------------------------")
 }
@@ -449,7 +528,7 @@ func postFaultsReActive(w http.ResponseWriter, r *http.Request) {
 
 	}
 
-	//pg_dump, osd_dump, osd-tree
+	//pg_dump, osd_dump, osd-tree update
 	clusterStatsGathering()
 
 	//pool data loss probability calculation
@@ -533,7 +612,7 @@ func postForecastingReActive(w http.ResponseWriter, r *http.Request) {
 
 	}
 
-	//pg_dump, osd_dump, osd-tree
+	//pg_dump, osd_dump, osd-tree update
 	clusterStatsGathering()
 
 	progressiveWeekDays := []int{7, 14, 21, 28}
@@ -657,7 +736,7 @@ func main() {
 
 	rpc.HandleHTTP()
 
-	listener, err := net.Listen("tcp", "localhost:1025")
+	listener, err := net.Listen("tcp", "localhost:1205")
 	if err != nil {
 		log.Fatal("Listener error: ", err)
 	}
@@ -687,13 +766,15 @@ func main() {
 	//creation of REST endpoints
 	router.HandleFunc("/health", getInfoHealth).Methods("GET")
 
+	router.HandleFunc("/dataloss-prob/current", getCurrentProbability).Methods("GET")
+
 	router.HandleFunc("/dataloss-prob/component/faults", postFaultsReActive).Methods("POST")
 	router.HandleFunc("/dataloss-prob/faults", postFaultsProActive).Methods("POST")
 
 	router.HandleFunc("/dataloss-prob/forecasting", postForecastingProActive).Methods("POST")
 	router.HandleFunc("/dataloss-prob/component/forecasting", postForecastingReActive).Methods("POST")
 
-	//gorouting to properly handle server.ListenAndServe error
+	//go routin to properly handle server.ListenAndServe error
 	go func() {
 		fmt.Println("Started REST API server on localhost:8081")
 		fmt.Println("Listening ...")
