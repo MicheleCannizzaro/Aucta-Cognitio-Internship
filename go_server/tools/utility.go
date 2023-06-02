@@ -132,6 +132,22 @@ func Difference(a, b []string) []string {
 	return diff
 }
 
+func IntDifference(a, b []int) []int {
+	diff := []int{}
+	m := make(map[int]bool)
+
+	for _, item := range b {
+		m[item] = true
+	}
+
+	for _, item := range a {
+		if _, ok := m[item]; !ok {
+			diff = append(diff, item)
+		}
+	}
+	return diff
+}
+
 func SliceIntTestEquality(a, b []int) bool {
 	if len(a) != len(b) {
 		return false
@@ -159,6 +175,15 @@ func GetIntRandomNumber(min int, max int) (randomNumber int) {
 }
 
 func StringInSlice(a string, list []string) bool {
+	for _, b := range list {
+		if b == a {
+			return true
+		}
+	}
+	return false
+}
+
+func IntInSlice(a int, list []int) bool {
 	for _, b := range list {
 		if b == a {
 			return true

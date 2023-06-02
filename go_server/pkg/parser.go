@@ -425,14 +425,14 @@ func GetPgsWithHighProbabilityOfLosingData(pgNumberOfAffectedReplicaMap map[stri
 }
 
 // important
-func GetLostAndWarningPgs(faultBucketOrRouter []string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) ([]string, []string, error) {
+func GetLostAndWarningPgs(faultBucketOrRouter []string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) ([]string, []string, []int, error) {
 	warningPgsSlice := []string{}
 	lostPgsSlice := []string{}
 
-	incrementalPgAffectedReplicaMap, err := IncrementalRiskCalculator(faultBucketOrRouter, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+	incrementalPgAffectedReplicaMap, totalAffectedOsdIds, err := IncrementalRiskCalculator(faultBucketOrRouter, pgDumpOutput, osdTreeOutput, osdDumpOutput)
 	if err != nil {
 		fmt.Println("GetLostAndWarningPgs: Error in IncrementalRiskCalculator")
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	for pg, numPgAffectedReplicas := range incrementalPgAffectedReplicaMap {
@@ -463,53 +463,129 @@ func GetLostAndWarningPgs(faultBucketOrRouter []string, pgDumpOutput s.PgDumpOut
 		}
 	}
 
-	return lostPgsSlice, warningPgsSlice, nil
+	return lostPgsSlice, warningPgsSlice, totalAffectedOsdIds, nil
 }
 
+//GetPoolDataLossProbability
 // important
+// func GetPoolDataLossProbability(faultBucketOrRouter []string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) (map[string]float64, error) {
+//
+// 	poolDataLossProbabilityMap := make(map[string]float64)
+//
+// 	//get the number of PGs inside each pool
+// 	poolPgNumberMap, err := GetPoolPgNumberMap(pgDumpOutput, osdDumpOutput)
+//
+// 	if err != nil {
+// 		error := errors.New("something went wrong in getting PoolPgNumberMap")
+// 		return poolDataLossProbabilityMap, error
+// 	}
+//
+// 	//extract Pools' values from GetLostAndWarningPgs
+// 	poolAffectedPgsNumberMap := make(map[string]int)
+// 	lostPgsSlice, warningPgsSlice, err := GetLostAndWarningPgs(faultBucketOrRouter, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+// 	if err != nil {
+// 		fmt.Println("GetPoolDataLossProbability: Error in GetLostAndWarningPgs")
+// 		return nil, err
+// 	}
+// 	lostPgsPoolSlice := ExtractPoolsFromPgSlice(lostPgsSlice)
+//
+// 	for _, pg := range warningPgsSlice {
+// 		poolId := strings.Split(pg, ".")[0]
+//
+// 		if _, isPresent := poolAffectedPgsNumberMap[poolId]; !isPresent {
+// 			poolAffectedPgsNumberMap[poolId] = 0
+// 		}
+//
+// 		poolAffectedPgsNumberMap[poolId] += 1
+// 	}
+//
+// 	pools := GetPools(pgDumpOutput)
+//
+// 	for _, pool := range pools {
+//
+// 		if utility.StringInSlice(pool, lostPgsPoolSlice) {
+// 			poolAffectedPgsNumberMap[pool] = poolPgNumberMap[pool]
+// 			//poolAffectedPgsNumberMap[pool] = -1 * poolPgNumberMap[pool]
+// 			//poolAffectedPgsNumberMap[pool] = -1 * poolAffectedPgsNumberMap[pool]
+// 		}
+//
+// 		poolDatalossProbability := float64(poolAffectedPgsNumberMap[pool]) / float64(poolPgNumberMap[pool])
+//
+// 		poolId, err := strconv.Atoi(pool)
+// 		if err != nil {
+// 			error := errors.New("something went wrong in converting poolId in string format to int")
+// 			return nil, error
+// 		}
+// 		poolName := GetPool(poolId, osdDumpOutput).PoolName
+//
+// 		poolDataLossProbabilityMap[poolName] = utility.RoundFloat(poolDatalossProbability, 2)
+// 	}
+//
+// 	return poolDataLossProbabilityMap, nil
+// }
+
 func GetPoolDataLossProbability(faultBucketOrRouter []string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) (map[string]float64, error) {
 
 	poolDataLossProbabilityMap := make(map[string]float64)
+	UniqueOsdsInWarningPgSlicePerPool := make(map[string][]int)
 
-	//get the number of PGs inside each pool
-	poolPgNumberMap, err := GetPoolPgNumberMap(pgDumpOutput, osdDumpOutput)
-
-	if err != nil {
-		error := errors.New("something went wrong in getting PoolPgNumberMap")
-		return poolDataLossProbabilityMap, error
-	}
-
-	//extract Pools' values from GetLostAndWarningPgs
-	poolAffectedPgsNumberMap := make(map[string]int)
-	lostPgsSlice, warningPgsSlice, err := GetLostAndWarningPgs(faultBucketOrRouter, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+	lostPgsSlice, warningPgsSlice, totalAffectedOsdIds, err := GetLostAndWarningPgs(faultBucketOrRouter, pgDumpOutput, osdTreeOutput, osdDumpOutput)
 	if err != nil {
 		fmt.Println("GetPoolDataLossProbability: Error in GetLostAndWarningPgs")
 		return nil, err
 	}
+
 	lostPgsPoolSlice := ExtractPoolsFromPgSlice(lostPgsSlice)
+	fmt.Printf("lostPgsPoolSlice:= %v\n", lostPgsPoolSlice)
+
+	//Prob(data is lost with next osd failure) = (num_unique_osds in warningPgSlice)/(num_good_osds)
 
 	for _, pg := range warningPgsSlice {
 		poolId := strings.Split(pg, ".")[0]
 
-		if _, isPresent := poolAffectedPgsNumberMap[poolId]; !isPresent {
-			poolAffectedPgsNumberMap[poolId] = 0
-		}
+		actingSet := GetOsdsContainingPg(pg, pgDumpOutput)
 
-		poolAffectedPgsNumberMap[poolId] += 1
+		//fmt.Printf("Acting Set: %d\n", actingSet)
+
+		for _, osdId := range actingSet {
+
+			if !utility.IntInSlice(osdId, totalAffectedOsdIds) {
+				if _, isPresent := UniqueOsdsInWarningPgSlicePerPool[poolId]; !isPresent {
+					UniqueOsdsInWarningPgSlicePerPool[poolId] = []int{}
+				}
+				UniqueOsdsInWarningPgSlicePerPool[poolId] = append(UniqueOsdsInWarningPgSlicePerPool[poolId], osdId)
+			}
+		}
 	}
 
 	pools := GetPools(pgDumpOutput)
+	for _, pool := range pools {
+		UniqueOsdsInWarningPgSlicePerPool[pool] = utility.RemoveDuplicateInt(UniqueOsdsInWarningPgSlicePerPool[pool])
+	}
+
+	fmt.Printf("UniqueOsdsInWarningPgSlicePerPool:= %v\n", UniqueOsdsInWarningPgSlicePerPool)
+
+	totalOsds := GetOsds(pgDumpOutput)
+	remaingOSDs := utility.IntDifference(totalOsds, totalAffectedOsdIds)
+
+	fmt.Printf("remaining OSDs:= %v\n", remaingOSDs)
 
 	for _, pool := range pools {
 
-		if utility.StringInSlice(pool, lostPgsPoolSlice) {
-			poolAffectedPgsNumberMap[pool] = poolPgNumberMap[pool]
-			//poolAffectedPgsNumberMap[pool] = -1 * poolPgNumberMap[pool]
-			//poolAffectedPgsNumberMap[pool] = -1 * poolAffectedPgsNumberMap[pool]
+		var poolDatalossProbability float64
+		if len(remaingOSDs) == 0 {
+			poolDatalossProbability = 1.0
+
+		} else {
+
+			if utility.StringInSlice(pool, lostPgsPoolSlice) {
+				UniqueOsdsInWarningPgSlicePerPool[pool] = remaingOSDs
+			}
+
+			poolDatalossProbability = float64(len(UniqueOsdsInWarningPgSlicePerPool[pool])) / float64(len(remaingOSDs))
 		}
 
-		poolDatalossProbability := float64(poolAffectedPgsNumberMap[pool]) / float64(poolPgNumberMap[pool])
-
+		//convert poolIds in poolNames
 		poolId, err := strconv.Atoi(pool)
 		if err != nil {
 			error := errors.New("something went wrong in converting poolId in string format to int")
@@ -1112,7 +1188,7 @@ func RiskCalculator(faultBucketOrRouter string, pgDumpOutput s.PgDumpOutputStruc
 }
 
 // important
-func IncrementalRiskCalculator(faultBucketOrRouter []string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) (map[string]int, error) {
+func IncrementalRiskCalculator(faultBucketOrRouter []string, pgDumpOutput s.PgDumpOutputStruct, osdTreeOutput s.OsdTreeOutputStruct, osdDumpOutput s.OsdDumpOutputStruct) (map[string]int, []int, error) {
 	totalNumberOfAffectedReplicaMap := make(map[string]int)
 	totalAffectedOsdIds := []int{}
 
@@ -1120,7 +1196,7 @@ func IncrementalRiskCalculator(faultBucketOrRouter []string, pgDumpOutput s.PgDu
 		affectedOsdIds, err := RiskCalculator(faultBucketOrRouterName, pgDumpOutput, osdTreeOutput, osdDumpOutput)
 		if err != nil {
 			fmt.Println("IncrementalRiskCalculator: Error in RiskCalculator")
-			return nil, err
+			return nil, nil, err
 		}
 		totalAffectedOsdIds = append(totalAffectedOsdIds, affectedOsdIds...)
 	}
@@ -1139,7 +1215,7 @@ func IncrementalRiskCalculator(faultBucketOrRouter []string, pgDumpOutput s.PgDu
 		}
 	}
 
-	return totalNumberOfAffectedReplicaMap, nil
+	return totalNumberOfAffectedReplicaMap, totalAffectedOsdIds, nil
 }
 
 // -----------------------RISK FAILURE FORECASTING FUNCTION----------------------------

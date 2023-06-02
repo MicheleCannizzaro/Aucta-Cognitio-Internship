@@ -31,7 +31,7 @@ func TestIncrementalRiskCalculator(t *testing.T) {
 
 	hosts := []string{"sv81", "sv82", "sv61", "newnamefor-sv53"}
 	t.Logf("hosts -> %s\n\n", hosts)
-	incrementalPgAffectedReplicaMap, err := IncrementalRiskCalculator(hosts, pgDumpOutput, osdTreeOutput, osdDumpOutput)
+	incrementalPgAffectedReplicaMap, _, err := IncrementalRiskCalculator(hosts, pgDumpOutput, osdTreeOutput, osdDumpOutput)
 	if err != nil {
 		t.Errorf("Error in Incremental RiskCalculator")
 	}
@@ -78,7 +78,7 @@ func TestPoolDataLossProbability(t *testing.T) {
 	osdTreeOutput := utility.ReadOsdTreeJson("../osd-tree.json")
 	osdDumpOutput := utility.ReadOsdDumpJson("../osd_dump.json")
 
-	faults := []string{"default"} //rout bucket
+	faults := []string{"default"} //root bucket
 	actualProbability, err := GetPoolDataLossProbability(faults, pgDumpOutput, osdTreeOutput, osdDumpOutput)
 	if err != nil {
 		t.Errorf("Error in GetPoolDataLossProbability")
